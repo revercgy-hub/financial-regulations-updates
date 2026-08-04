@@ -188,6 +188,10 @@ def stage_cases(package: Path) -> tuple[int, dict[str, int]]:
     for source in CASE_SITE.rglob("*"):
         if source.is_file():
             copy_file(source, package / "cases" / source.relative_to(CASE_SITE))
+    case_index = (package / "cases" / "index.html").read_text(encoding="utf-8")
+    for marker in ("const initialParams = new URLSearchParams(location.search)", "history.replaceState"):
+        if marker not in case_index:
+            raise RuntimeError(f"Case site is missing navigation-state support: {marker}")
     markdown_root = CASE_KB / "markdown"
     for source in markdown_root.rglob("*.md"):
         copy_file(source, package / "case-data" / "markdown" / source.relative_to(markdown_root))
