@@ -93,6 +93,6 @@ try {
 
 $BuiltApk = Join-Path $ProjectRoot 'app\build\outputs\apk\debug\app-debug.apk'
 if (-not (Test-Path $BuiltApk)) { throw 'Build finished but APK was not found' }
-$OutputApk = Join-Path $ProjectRoot 'FinReg-KnowledgeBase-Online-v1.7.0.apk'
+$OutputApk = Join-Path $ProjectRoot 'FinReg-KnowledgeBase-Online-v1.7.1.apk'
 Copy-Item -LiteralPath $BuiltApk -Destination $OutputApk -Force
 Write-Host "Build complete: $OutputApk"
