@@ -1,65 +1,51 @@
-# 金融监管知识库 Android 模拟器测试报告
+# 金融监管制度库 Android 模拟器测试报告
 
-测试日期：2026-08-04
+测试日期：2026-08-05
 
 ## 测试环境
 
 - AVD：`FinReg_API35`
-- 设备模板：Pixel 3a
 - Android：15 / API 35 / Google APIs x86_64
-- Android Emulator：36.6.11
-- 虚拟化加速：AEHD 2.2（检测通过）
-- 模拟器内存：2 GB
-- APK：`FinReg-KnowledgeBase-Slim-Full-v1.5.0.apk`
+- APK：`FinReg-KnowledgeBase-Online-v1.6.0.apk`
 - 包名：`com.finreg.knowledgebase`
-- 版本：versionCode 7 / versionName 1.5.0
+- APP 版本：versionCode 8 / versionName 1.6.0
+- 制度版本：`20260805.1`
+- 更新来源：GitHub Release 公网地址
 
-## 已通过项目
+## 联网同步验证
 
-- APK 覆盖安装和冷启动。
-- 首页显示及 5,438 篇文档目录载入。
-- 分片全文检索：输入 `basel`，返回 5 篇，与离线索引预期一致。
-- 打开检索结果正文。
-- 正文顶部搜索栏输入 `basel` 后正常返回 5 篇匹配文档，不再进入错误页。
-- 顶部返回按钮返回统一检索，并保留关键词、筛选条件、结果数量和滚动位置。
-- Android 系统返回键返回统一检索，并保留关键词、筛选条件、结果数量和滚动位置。
-- 顶部“返回统一检索首页”按钮清空检索状态并显示全部 5,438 篇文档。
-- 正文“导出与更多”菜单可直接打开 Markdown 原文，无需滚动到长文档末尾。
-- Markdown 返回正文，再返回统一检索，导航层级及检索状态均正常。
-- 分享当前条文，系统分享面板正常打开。
-- 导出 TXT，实测生成 384,919 字节文件并进入系统分享面板。
-- 打印/保存 PDF：
-  - 22 KB 短文档生成 8 页预览。
-  - 1.17 MB 超长文档生成 362 页、约 30.6 MB 打印数据，但等待时间较长。
-- 横屏布局。
-- 强制停止后的冷启动。
-- 测试期间未发现 APP 进程的 Fatal Exception、ANR 或 OutOfMemory。
-- APK v2 签名验证通过；包内 5,438 篇 HTML、5,438 篇 Markdown 和 32 个检索分片完整。
-- APK 内 27,190 个正文首页/搜索链接均已指向 Android 首页，旧错误链接数量为 0。
-- Android Lint：0 个错误、1 个兼容性提示。
+- 卸载旧版并清空应用数据后首次启动，APP 自动读取公开 `latest.json`。
+- 真实下载 28,627,515 字节制度包，没有使用 ADB 预置数据。
+- 下载进度从 0% 持续更新到 100%。
+- 文件大小和 SHA-256 校验通过。
+- 安全解压、临时目录安装和目录切换成功。
+- 内部制度目录包含：
+  - 2,021 个 HTML 正文
+  - 2,021 个 Markdown 原文
+  - 16 个全文检索分片
+- 手动“立即检查制度更新”识别为最新版本，没有重复下载制度包。
+- 强制停止后冷启动直接载入已同步内容，后台检查更新不阻塞首页。
 
-## 检查结论
+## 功能回归
 
-v1.5.0 修复了正文顶部搜索栏指向不存在旧首页文件的问题，并将系统返回和统一检索改为原生直接导航，不再依赖可能含错误页的 WebView 历史。正文搜索、系统返回、统一检索及旧链接兼容回归均通过。本轮未发现阻断使用的问题。超长文档生成 PDF 仍需较长等待时间，属于文档页数和系统打印服务的性能限制。
+- 首页显示 2,021 篇金融监管制度。
+- 输入 `basel`，全文检索返回 5 篇匹配文档。
+- 检索结果正文正常打开。
+- Android 系统返回键回到制度检索页，并保留 `basel` 和 5 篇结果。
+- 顶部制度检索首页按钮清空关键词，恢复显示 2,021 篇文档。
+- Markdown 原文可从原生“导出与更多”菜单打开。
+- 测试期间没有应用 Fatal Exception、ANR 或 OutOfMemory。
 
-## 便捷脚本
+## 构建与安全检查
 
-启动可见模拟器、安装目录中最新 APK 并打开 APP：
+- Gradle `assembleDebug`：通过。
+- Android Lint：0 个错误、1 个 targetSdk 兼容性提示。
+- APK Signature Scheme v2：验证通过。
+- APK 大小：41,280 字节；旧 v1.5.0 为 96,840,428 字节。
+- APK SHA-256：`e32b59db65ae81fcbc0be7702ecbb25aa91726e3fdab1ff89f2348e844ea87e8`。
+- 制度包大小：28,627,515 字节。
+- 制度包 SHA-256：`987f67adb73efd9d5b08d2185ee1ba3cd909babdab55a1b38d0e009c415309fe`。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start-test-emulator.ps1
-```
+## 结论
 
-仅启动/打开 APP，不重新安装 APK：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start-test-emulator.ps1 -SkipInstall
-```
-
-关闭模拟器：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\stop-test-emulator.ps1
-```
-
-测试截图保存在 `test-output` 目录。
+v1.6.0 已实现“小 APK + GitHub 联网同步制度库”。首次同步、校验、安装、检索、正文、返回、Markdown、手动更新检查和冷启动缓存均通过模拟器验证。上一版本回滚入口会在成功安装第二个制度版本后自动出现。

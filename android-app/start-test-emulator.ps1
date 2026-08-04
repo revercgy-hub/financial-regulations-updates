@@ -56,7 +56,7 @@ Write-Host "Emulator ready: $Serial"
 & $Adb -s $Serial shell settings put global animator_duration_scale 0
 
 if (-not $SkipInstall) {
-    $Apk = Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'FinReg-KnowledgeBase-Slim-Full-v*.apk' |
+    $Apk = Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'FinReg-KnowledgeBase-*.apk' |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     if (-not $Apk) {

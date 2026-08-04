@@ -6,4 +6,4 @@
 - `deployment/`：制度更新包构建、版本清单和发布工具。
 - GitHub Releases：存放制度压缩包与可安装 APK。
 
-APP 使用 `update/latest.json` 检查版本，下载后校验文件大小和 SHA-256，并采用临时目录安装；上一版本会保留用于回滚。
+APP 使用 `deployment/update/latest.json` 检查版本，下载后校验文件大小和 SHA-256，并采用临时目录安装；上一版本会保留用于回滚。
