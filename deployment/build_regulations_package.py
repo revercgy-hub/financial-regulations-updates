@@ -203,6 +203,19 @@ def zip_tree(source: Path, destination: Path) -> None:
                 archive.write(path, path.relative_to(source).as_posix())
 
 
+def validate_android_paths(source: Path) -> None:
+    violations = []
+    for path in source.rglob("*"):
+        for component in path.relative_to(source).parts:
+            size = len(component.encode("utf-8"))
+            if size > 255:
+                violations.append(f"{size} bytes: {path.relative_to(source)}")
+                break
+    if violations:
+        preview = "\n".join(violations[:10])
+        raise RuntimeError(f"Package contains Android-incompatible filenames:\n{preview}")
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -250,6 +263,7 @@ def main() -> None:
         encoding="utf-8",
         newline="\n",
     )
+    validate_android_paths(package)
 
     asset_name = f"knowledge-package-{args.version}.zip"
     archive = DIST / asset_name
@@ -262,8 +276,8 @@ def main() -> None:
         "package_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset_name}",
         "package_size": archive.stat().st_size,
         "sha256": digest,
-        "app_version": "1.7.0",
-        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.0.apk",
+        "app_version": "1.7.1",
+        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.1.apk",
     }
     latest_path = DIST / "latest.json"
     latest_path.write_text(

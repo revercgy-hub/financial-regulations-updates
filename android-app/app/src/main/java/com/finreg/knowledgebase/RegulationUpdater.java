@@ -159,12 +159,20 @@ final class RegulationUpdater {
     }
 
     private JSONObject fetchManifest() throws Exception {
-        URL url = new URL(MANIFEST_URL + "?t=" + System.currentTimeMillis());
-        try (InputStream input = openDownload(url);
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            copyLimited(input, output, MAX_MANIFEST_BYTES, null);
-            return new JSONObject(output.toString(StandardCharsets.UTF_8.name()));
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            URL url = new URL(MANIFEST_URL + "?t=" + System.currentTimeMillis());
+            try (InputStream input = openDownload(url);
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                copyLimited(input, output, MAX_MANIFEST_BYTES, null);
+                return new JSONObject(output.toString(StandardCharsets.UTF_8.name()));
+            } catch (Exception error) {
+                lastError = error;
+                if (attempt < 4) Thread.sleep(1000L * attempt);
+            }
         }
+        throw new IllegalStateException(
+                "更新清单在自动重试后仍无法读取：" + readableMessage(lastError), lastError);
     }
 
     private void validateManifest(JSONObject manifest) throws Exception {
@@ -191,29 +199,60 @@ final class RegulationUpdater {
         if (!root.exists() && !root.mkdirs()) throw new IllegalStateException("无法建立制度存储目录");
         File archive = new File(context.getCacheDir(), "regulations-update.zip");
         long expected = manifest.getLong("package_size");
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream input = new BufferedInputStream(openDownload(new URL(manifest.getString("package_url"))));
-             FileOutputStream file = new FileOutputStream(archive);
-             BufferedOutputStream output = new BufferedOutputStream(file)) {
-            byte[] buffer = new byte[128 * 1024];
-            long total = 0;
-            int read;
-            int lastPercent = -1;
-            while ((read = input.read(buffer)) >= 0) {
-                total += read;
-                if (total > MAX_PACKAGE_BYTES || total > expected + 1024) {
-                    throw new IllegalStateException("下载文件大小超过清单声明");
+        if (archive.length() > expected && !archive.delete()) {
+            throw new IllegalStateException("无法清理异常的下载缓存");
+        }
+        URL packageUrl = new URL(manifest.getString("package_url"));
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= 4 && archive.length() < expected; attempt++) {
+            long offset = archive.length();
+            try (InputStream input = new BufferedInputStream(openDownload(packageUrl, offset));
+                 FileOutputStream file = new FileOutputStream(archive, offset > 0);
+                 BufferedOutputStream output = new BufferedOutputStream(file)) {
+                byte[] buffer = new byte[128 * 1024];
+                long total = offset;
+                int read;
+                int lastPercent = -1;
+                while ((read = input.read(buffer)) >= 0) {
+                    total += read;
+                    if (total > MAX_PACKAGE_BYTES || total > expected + 1024) {
+                        throw new IllegalStateException("下载文件大小超过清单声明");
+                    }
+                    output.write(buffer, 0, read);
+                    int percent = (int) Math.min(100, total * 100L / expected);
+                    if (percent != lastPercent) {
+                        lastPercent = percent;
+                        listener.onProgress("正在下载知识库更新…", percent, required);
+                    }
                 }
-                output.write(buffer, 0, read);
-                digest.update(buffer, 0, read);
-                int percent = (int) Math.min(100, total * 100L / expected);
-                if (percent != lastPercent) {
-                    lastPercent = percent;
-            listener.onProgress("正在下载知识库更新…", percent, required);
+                output.flush();
+                if (total != expected) throw new IllegalStateException("下载连接提前结束");
+            } catch (RangeNotSupportedException error) {
+                lastError = error;
+                if (archive.exists() && !archive.delete()) {
+                    throw new IllegalStateException("服务器不支持续传且无法重置下载缓存", error);
                 }
+            } catch (Exception error) {
+                lastError = error;
             }
-            output.flush();
-            if (total != expected) throw new IllegalStateException("下载文件大小与清单不一致");
+            if (archive.length() < expected && attempt < 4) {
+                int percent = (int) Math.min(99, archive.length() * 100L / expected);
+                listener.onProgress("网络中断，正在自动续传（第 " + (attempt + 1) + " 次）…", percent, required);
+                Thread.sleep(1000L * attempt);
+            }
+        }
+        if (archive.length() != expected) {
+            throw new IllegalStateException(
+                    "知识库下载在自动重试后仍未完成：" + readableMessage(lastError), lastError);
+        }
+
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = new BufferedInputStream(new FileInputStream(archive))) {
+            byte[] buffer = new byte[128 * 1024];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                digest.update(buffer, 0, read);
+                }
         }
         String actual = hex(digest.digest());
         if (!actual.equalsIgnoreCase(manifest.getString("sha256"))) {
@@ -302,6 +341,10 @@ final class RegulationUpdater {
     }
 
     private InputStream openDownload(URL initial) throws Exception {
+        return openDownload(initial, 0);
+    }
+
+    private InputStream openDownload(URL initial, long offset) throws Exception {
         URL url = initial;
         for (int redirect = 0; redirect < 6; redirect++) {
             if (!"https".equalsIgnoreCase(url.getProtocol())) {
@@ -313,6 +356,7 @@ final class RegulationUpdater {
             connection.setReadTimeout(60_000);
             connection.setRequestProperty("Accept", "application/json, application/zip, */*");
             connection.setRequestProperty("User-Agent", "FinReg-Android/" + BuildConfig.VERSION_NAME);
+            if (offset > 0) connection.setRequestProperty("Range", "bytes=" + offset + "-");
             int status = connection.getResponseCode();
             if (status >= 300 && status < 400) {
                 String location = connection.getHeaderField("Location");
@@ -324,6 +368,10 @@ final class RegulationUpdater {
             if (status < 200 || status >= 300) {
                 connection.disconnect();
                 throw new IllegalStateException("更新服务器返回 HTTP " + status);
+            }
+            if (offset > 0 && status != HttpURLConnection.HTTP_PARTIAL) {
+                connection.disconnect();
+                throw new RangeNotSupportedException();
             }
             return new ConnectionInputStream(connection);
         }
@@ -404,6 +452,12 @@ final class RegulationUpdater {
             } finally {
                 connection.disconnect();
             }
+        }
+    }
+
+    private static final class RangeNotSupportedException extends Exception {
+        RangeNotSupportedException() {
+            super("更新服务器未接受断点续传");
         }
     }
 }
