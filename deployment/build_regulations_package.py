@@ -16,9 +16,12 @@ DEPLOYMENT = Path(__file__).resolve().parent
 BUILD = DEPLOYMENT / "build"
 DIST = DEPLOYMENT / "dist"
 APP_SCRIPT = PROJECT / "android-app" / "tools" / "slim-app.js"
+CASE_KB = PROJECT / "penalty_cases_kb"
+CASE_SITE = PROJECT / "penalty_cases_site"
 REPOSITORY = "revercgy-hub/financial-regulations-updates"
 SCOPE = "regulations"
 EXPECTED_DOCUMENTS = 2021
+EXPECTED_CASE_SOURCES = {"财政部", "证监会", "审计署", "中央纪委国家监委"}
 SHARD_COUNT = 16
 KEEP_FIELDS = (
     "collection",
@@ -107,7 +110,8 @@ def build_homepage(source: Path, destination: Path, generated_at: str) -> None:
         r'<section class="usage-note">.*?</section>',
         """<section class="usage-note">
       <strong>联网同步版</strong>
-      <p>本地内容由 APP 从 GitHub 安全下载并校验；可在“导出与更多”中检查更新或恢复上一版本。</p>
+      <p>本地内容由 APP 从 GitHub 安全下载并校验；可在“导出与更多”中检查更新、进入案例库或恢复上一版本。</p>
+      <p><a href="cases/index.html">进入财政、证监会、审计、纪检监察案例库</a></p>
       <span>制度包生成于 %s</span>
     </section>""" % generated_at,
         html,
@@ -167,6 +171,29 @@ def build_index(package: Path, records: list[dict[str, object]]) -> None:
             json.dump(shard, output, ensure_ascii=False, separators=(",", ":"))
 
 
+def stage_cases(package: Path) -> tuple[int, dict[str, int]]:
+    manifest_path = CASE_KB / "manifest.json"
+    site_manifest_path = CASE_SITE / "site_manifest.json"
+    if not manifest_path.is_file() or not site_manifest_path.is_file():
+        raise RuntimeError("Case library has not been built")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    site_manifest = json.loads(site_manifest_path.read_text(encoding="utf-8"))
+    documents = int(manifest.get("documents") or 0)
+    by_source = {str(key): int(value) for key, value in manifest.get("by_source", {}).items()}
+    if documents <= 0 or documents != int(site_manifest.get("documents") or 0):
+        raise RuntimeError("Case knowledge base and static site counts do not match")
+    if set(by_source) != EXPECTED_CASE_SOURCES or sum(by_source.values()) != documents:
+        raise RuntimeError(f"Unexpected case source counts: {by_source}")
+
+    for source in CASE_SITE.rglob("*"):
+        if source.is_file():
+            copy_file(source, package / "cases" / source.relative_to(CASE_SITE))
+    markdown_root = CASE_KB / "markdown"
+    for source in markdown_root.rglob("*.md"):
+        copy_file(source, package / "case-data" / "markdown" / source.relative_to(markdown_root))
+    return documents, by_source
+
+
 def zip_tree(source: Path, destination: Path) -> None:
     with zipfile.ZipFile(
         destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
@@ -206,6 +233,7 @@ def main() -> None:
     copy_file(APP_SCRIPT, package / "assets" / "app.js")
     stage_documents(source, package, records)
     build_index(package, records)
+    case_documents, case_by_source = stage_cases(package)
 
     package_manifest = {
         "schema": 1,
@@ -214,6 +242,8 @@ def main() -> None:
         "version_code": version_code,
         "generated_at": generated_at,
         "documents": len(records),
+        "case_documents": case_documents,
+        "case_by_source": case_by_source,
     }
     (package / "package.json").write_text(
         json.dumps(package_manifest, ensure_ascii=False, indent=2) + "\n",
@@ -221,19 +251,19 @@ def main() -> None:
         newline="\n",
     )
 
-    asset_name = f"regulations-package-{args.version}.zip"
+    asset_name = f"knowledge-package-{args.version}.zip"
     archive = DIST / asset_name
     zip_tree(package, archive)
     digest = sha256(archive)
-    tag = f"regulations-{args.version}"
+    tag = f"knowledge-{args.version}"
     latest = {
         **package_manifest,
         "min_app_version_code": 8,
         "package_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset_name}",
         "package_size": archive.stat().st_size,
         "sha256": digest,
-        "app_version": "1.6.0",
-        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.6.0.apk",
+        "app_version": "1.7.0",
+        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.0.apk",
     }
     latest_path = DIST / "latest.json"
     latest_path.write_text(
@@ -243,7 +273,7 @@ def main() -> None:
     )
     print(
         f"Built {archive.name}: {archive.stat().st_size / 1024 / 1024:.1f} MiB, "
-        f"{len(records):,} documents, sha256={digest}"
+        f"{len(records):,} regulations + {case_documents:,} cases, sha256={digest}"
     )
     print(f"Manifest: {latest_path}")
 

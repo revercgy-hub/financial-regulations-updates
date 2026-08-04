@@ -90,7 +90,7 @@ public final class MainActivity extends Activity {
         back.setOnClickListener(v -> navigateBack());
         bar.addView(back);
 
-        ImageButton home = actionButton(android.R.drawable.ic_menu_search, "返回制度检索首页");
+        ImageButton home = actionButton(android.R.drawable.ic_menu_search, "返回当前检索首页");
         home.setOnClickListener(v -> returnToSearchHome());
         bar.addView(home);
 
@@ -214,7 +214,7 @@ public final class MainActivity extends Activity {
             if (path == null) return true;
             File local = new File(path);
             if (!updater.containsCurrentFile(local)) {
-                Toast.makeText(this, "已阻止制度库之外的本地文件", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "已阻止知识库之外的本地文件", Toast.LENGTH_SHORT).show();
                 return true;
             }
             String lower = path.toLowerCase(Locale.ROOT);
@@ -257,9 +257,10 @@ public final class MainActivity extends Activity {
         actions.add("分享所选文字/当前条文");
         actions.add("导出条文为 TXT 文件");
         actions.add("打印或保存为 PDF");
-        actions.add("返回制度检索首页");
-        actions.add("立即检查制度更新");
-        if (updater.hasBackup()) actions.add("恢复上一版制度库");
+        actions.add(isCaseView() ? "返回案例检索首页" : "返回制度检索首页");
+        actions.add(isCaseView() ? "打开制度库" : "打开案例库");
+        actions.add("立即检查知识库更新");
+        if (updater.hasBackup()) actions.add("恢复上一版知识库");
         actions.add("关于联网同步版");
         String[] items = actions.toArray(new String[0]);
         new AlertDialog.Builder(this).setTitle("导出与更多").setItems(items, (d, which) -> {
@@ -268,9 +269,11 @@ public final class MainActivity extends Activity {
             else if ("分享所选文字/当前条文".equals(selected)) shareCurrentText();
             else if ("导出条文为 TXT 文件".equals(selected)) exportCurrentText();
             else if ("打印或保存为 PDF".equals(selected)) printCurrentPage();
-            else if ("返回制度检索首页".equals(selected)) returnToSearchHome();
-            else if ("立即检查制度更新".equals(selected)) checkForUpdates(true);
-            else if ("恢复上一版制度库".equals(selected)) confirmRollback();
+            else if ("返回制度检索首页".equals(selected) || "返回案例检索首页".equals(selected)) returnToSearchHome();
+            else if ("打开制度库".equals(selected)) openLibraryHome(false);
+            else if ("打开案例库".equals(selected)) openLibraryHome(true);
+            else if ("立即检查知识库更新".equals(selected)) checkForUpdates(true);
+            else if ("恢复上一版知识库".equals(selected)) confirmRollback();
             else showAbout();
         }).show();
     }
@@ -285,14 +288,25 @@ public final class MainActivity extends Activity {
         if (path == null) return null;
         File html = new File(path);
         if (!updater.containsCurrentFile(html)) return null;
-        String rootPath = updater.getCurrentRoot().getAbsolutePath() + File.separator + "docs" + File.separator;
-        if (!html.getAbsolutePath().startsWith(rootPath)) return null;
-        String relative = html.getAbsolutePath().substring(rootPath.length());
+        String packageRoot = updater.getCurrentRoot().getAbsolutePath() + File.separator;
+        String regulationRoot = packageRoot + "docs" + File.separator;
+        String caseRoot = packageRoot + "cases" + File.separator;
+        String relative;
+        File markdownRoot;
+        if (html.getAbsolutePath().startsWith(regulationRoot)) {
+            relative = html.getAbsolutePath().substring(regulationRoot.length());
+            markdownRoot = new File(updater.getCurrentRoot(), "data/markdown");
+        } else if (html.getAbsolutePath().startsWith(caseRoot)) {
+            relative = html.getAbsolutePath().substring(caseRoot.length());
+            markdownRoot = new File(updater.getCurrentRoot(), "case-data/markdown");
+        } else {
+            return null;
+        }
         String lower = relative.toLowerCase(Locale.ROOT);
         if (lower.endsWith(".html")) relative = relative.substring(0, relative.length() - 5);
         else if (lower.endsWith(".htm")) relative = relative.substring(0, relative.length() - 4);
         else return null;
-        File markdown = new File(updater.getCurrentRoot(), "data/markdown/" + relative + ".md");
+        File markdown = new File(markdownRoot, relative + ".md");
         return updater.containsCurrentFile(markdown) ? markdown : null;
     }
 
@@ -301,7 +315,7 @@ public final class MainActivity extends Activity {
             String body = text.length() > 100_000 ? text.substring(0, 100_000) + "\n\n（内容较长，已截取；可使用“导出条文”分享完整文件）" : text;
             Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain")
                     .putExtra(Intent.EXTRA_SUBJECT, pageTitle)
-                    .putExtra(Intent.EXTRA_TEXT, pageTitle + "\n\n" + body + "\n\n— 来自金融监管制度库联网同步版");
+                    .putExtra(Intent.EXTRA_TEXT, pageTitle + "\n\n" + body + "\n\n— 来自金融监管知识库联网同步版");
             startActivity(Intent.createChooser(send, "分享条文"));
         });
     }
@@ -313,7 +327,7 @@ public final class MainActivity extends Activity {
                 if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("无法建立导出目录");
                 String filename = safeName(pageTitle) + "_" + stamp() + ".txt";
                 File file = new File(dir, filename);
-                String content = pageTitle + "\n\n" + text + "\n\n— 导出自金融监管制度库联网同步版\n";
+                String content = pageTitle + "\n\n" + text + "\n\n— 导出自金融监管知识库联网同步版\n";
                 try (FileOutputStream out = new FileOutputStream(file)) {
                     out.write(content.getBytes(StandardCharsets.UTF_8));
                 }
@@ -465,13 +479,13 @@ public final class MainActivity extends Activity {
         updater.check(manual, new RegulationUpdater.Listener() {
             @Override public void onChecking(boolean required) {
                 runOnUiThread(() -> {
-                    if (required || manual) showUpdateDialog("正在检查制度版本…", 0, true);
+                    if (required || manual) showUpdateDialog("正在检查知识库版本…", 0, true);
                 });
             }
 
             @Override public void onDownloadStarted(String version, long bytes, boolean required) {
                 runOnUiThread(() -> showUpdateDialog(
-                        "发现制度版本 " + version + "，正在下载 " + formatSize(bytes) + "…", 0, true));
+                        "发现知识库版本 " + version + "，正在下载 " + formatSize(bytes) + "…", 0, true));
             }
 
             @Override public void onProgress(String message, int percent, boolean required) {
@@ -483,7 +497,7 @@ public final class MainActivity extends Activity {
                     dismissUpdateDialog();
                     loadSearchHome(true);
                     Toast.makeText(MainActivity.this,
-                            "制度库已启用 " + version + "（" + documents + " 篇）",
+                            "知识库已启用 " + version + "（制度 " + documents + " 篇，案例 " + updater.getCaseDocuments() + " 条）",
                             Toast.LENGTH_LONG).show();
                 });
             }
@@ -492,7 +506,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     dismissUpdateDialog();
                     if (wasManual) Toast.makeText(MainActivity.this,
-                            "已是最新制度版本 " + version + "（" + documents + " 篇）",
+                            "已是最新知识库版本 " + version + "（制度 " + documents + " 篇，案例 " + updater.getCaseDocuments() + " 条）",
                             Toast.LENGTH_LONG).show();
                 });
             }
@@ -502,14 +516,14 @@ public final class MainActivity extends Activity {
                     dismissUpdateDialog();
                     if (hasUsablePackage) {
                         if (wasManual) Toast.makeText(MainActivity.this,
-                                "检查更新失败，继续使用现有制度库：" + message,
+                                "检查更新失败，继续使用现有知识库：" + message,
                                 Toast.LENGTH_LONG).show();
                         return;
                     }
                     showWaitingPage();
                     new AlertDialog.Builder(MainActivity.this)
-                            .setTitle("制度库同步失败")
-                            .setMessage(message + "\n\n首次使用必须联网下载制度库，请检查网络后重试。")
+                            .setTitle("知识库同步失败")
+                            .setMessage(message + "\n\n首次使用必须联网下载知识库，请检查网络后重试。")
                             .setCancelable(false)
                             .setPositiveButton("重试", (dialog, which) -> checkForUpdates(true))
                             .setNegativeButton("退出", (dialog, which) -> finish())
@@ -521,7 +535,7 @@ public final class MainActivity extends Activity {
 
     private void confirmRollback() {
         new AlertDialog.Builder(this)
-                .setTitle("恢复上一版制度库")
+                .setTitle("恢复上一版知识库")
                 .setMessage("当前版本会保留为备份，可再次切换回来。是否继续？")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("恢复", (dialog, which) -> {
@@ -536,7 +550,7 @@ public final class MainActivity extends Activity {
                                 dismissUpdateDialog();
                                 loadSearchHome(true);
                                 Toast.makeText(MainActivity.this,
-                                        "已恢复制度版本 " + version, Toast.LENGTH_LONG).show();
+                                        "已恢复知识库版本 " + version, Toast.LENGTH_LONG).show();
                             });
                         }
                         @Override public void onError(String message, boolean usable, boolean manual) {
@@ -589,7 +603,7 @@ public final class MainActivity extends Activity {
         String html = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">" +
                 "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
                 "<body style=\"font-family:sans-serif;background:#f3f6f5;color:#173a35;padding:48px 24px\">" +
-                "<h2>正在准备金融监管制度库</h2><p>首次使用需要联网下载制度数据；以后启动时会自动检查更新。</p>" +
+                "<h2>正在准备金融监管知识库</h2><p>首次使用需要联网下载制度与案例数据；以后启动时会自动检查更新。</p>" +
                 "</body></html>";
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
@@ -599,11 +613,13 @@ public final class MainActivity extends Activity {
     }
 
     private void showAbout() {
-        new AlertDialog.Builder(this).setTitle("金融监管制度库 · 联网同步版")
+        new AlertDialog.Builder(this).setTitle("金融监管知识库 · 联网同步版")
                 .setMessage("APP 版本：" + BuildConfig.VERSION_NAME + "\n" +
                         "制度版本：" + updater.getVersion() + "\n" +
                         "制度数量：" + updater.getDocuments() + " 篇\n\n" +
-                        "启动时自动联网检查制度更新。下载包会校验文件大小和 SHA-256，" +
+                        "案例数量：" + updater.getCaseDocuments() + " 条\n" +
+                        "案例来源：财政部、证监会、审计署、中央纪委国家监委\n\n" +
+                        "启动时自动联网检查知识库更新。下载包会校验文件大小和 SHA-256，" +
                         "安装失败不会覆盖现有数据，并保留上一版本用于回滚。\n\n" +
                         "更新源：GitHub · " + RegulationUpdater.MANIFEST_URL)
                 .setPositiveButton("确定", null).show();
@@ -614,13 +630,46 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isHomeUrl(String url) {
-        String home = homeUrl();
-        return url == null || url.equals(home) || url.startsWith(home + "?") ||
-                url.startsWith(home + "#");
+        String regulationHome = libraryHomeUrl(false);
+        String caseHome = libraryHomeUrl(true);
+        return url == null || matchesHome(url, regulationHome) || matchesHome(url, caseHome);
     }
 
     private String homeUrl() {
-        return Uri.fromFile(updater.getHomeFile()).toString();
+        return libraryHomeUrl(isCaseView());
+    }
+
+    private boolean matchesHome(String url, String home) {
+        return url.equals(home) || url.startsWith(home + "?") || url.startsWith(home + "#");
+    }
+
+    private boolean isCaseView() {
+        String url = webView == null ? null : webView.getUrl();
+        if (url == null) return false;
+        Uri uri = Uri.parse(url);
+        if (!"file".equalsIgnoreCase(uri.getScheme())) return false;
+        String path = Uri.decode(uri.getPath());
+        if (path == null) return false;
+        String root = updater.getCurrentRoot().getAbsolutePath() + File.separator;
+        return path.startsWith(root + "cases" + File.separator)
+                || path.startsWith(root + "case-data" + File.separator);
+    }
+
+    private String libraryHomeUrl(boolean cases) {
+        File home = cases ? new File(updater.getCurrentRoot(), "cases/index.html") : updater.getHomeFile();
+        return Uri.fromFile(home).toString();
+    }
+
+    private void openLibraryHome(boolean cases) {
+        File home = cases ? new File(updater.getCurrentRoot(), "cases/index.html") : updater.getHomeFile();
+        if (!home.isFile()) {
+            Toast.makeText(this, "当前数据包尚未包含案例库，请立即检查更新", Toast.LENGTH_LONG).show();
+            checkForUpdates(true);
+            return;
+        }
+        clearHistoryAfterHomeLoad = true;
+        webView.stopLoading();
+        webView.loadUrl(Uri.fromFile(home).toString() + "?_home=" + System.currentTimeMillis());
     }
 
     private void loadSearchHome(boolean clearSearch) {
@@ -642,7 +691,8 @@ public final class MainActivity extends Activity {
             return;
         }
         String script = "(function(){if(typeof window.KB_RESET_SEARCH==='function'){" +
-                "window.KB_RESET_SEARCH();return true;}return false;})()";
+                "window.KB_RESET_SEARCH();return true;}var c=document.getElementById('clearFilter');" +
+                "if(c){c.click();return true;}return false;})()";
         webView.evaluateJavascript(script, value -> {
             if (!"true".equals(value)) loadSearchHome(true);
         });
@@ -651,6 +701,7 @@ public final class MainActivity extends Activity {
     private void resetSearchOrToast() {
         String script = "(function(){if(typeof window.KB_HAS_ACTIVE_SEARCH==='function'&&" +
                 "window.KB_HAS_ACTIVE_SEARCH()){window.KB_RESET_SEARCH();return true;}" +
+                "var c=document.getElementById('clearFilter');if(c){c.click();return true;}" +
                 "return false;})()";
         webView.evaluateJavascript(script, value -> {
             if (!"true".equals(value)) {

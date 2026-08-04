@@ -1,16 +1,24 @@
-# 制度更新部署
+# 知识库更新部署
 
-运行以下命令生成只包含金融监管制度的在线更新包：
+刷新财政部、证监会和中央纪委国家监委的当前案例；审计署保留已经核验的专项案例历史全集：
 
 ```powershell
-python .\deployment\build_regulations_package.py --version 20260805.1
+python .\deployment\refresh_cases.py --ccdi-pages 2 --ccdi-detail-limit 40
+```
+
+也可以使用 `--sources mof,csrc` 或 `--sources ccdi` 单独刷新来源。脚本会检查各来源数量，官网异常返回不完整数据时停止替换。
+
+生成包含制度库和四来源案例库的 APP 联网更新包：
+
+```powershell
+python .\deployment\build_regulations_package.py --version 20260805.2
 ```
 
 输出文件位于 `deployment/dist/`：
 
-- `regulations-package-<version>.zip`：APP 下载并安装的制度包。
+- `knowledge-package-<version>.zip`：APP 下载并安装的知识库包。
 - `latest.json`：复制到 `deployment/update/latest.json` 并提交到 GitHub 的版本清单。
 
-APP 会从以下固定地址读取清单：
+APP 固定从以下地址读取清单：
 
 `https://raw.githubusercontent.com/revercgy-hub/financial-regulations-updates/main/deployment/update/latest.json`

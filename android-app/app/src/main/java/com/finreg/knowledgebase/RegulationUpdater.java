@@ -28,6 +28,7 @@ final class RegulationUpdater {
     private static final String KEY_VERSION = "version";
     private static final String KEY_VERSION_CODE = "version_code";
     private static final String KEY_DOCUMENTS = "documents";
+    private static final String KEY_CASE_DOCUMENTS = "case_documents";
     private static final long MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final long MAX_PACKAGE_BYTES = 512L * 1024L * 1024L;
     private static final long MAX_EXTRACTED_BYTES = 768L * 1024L * 1024L;
@@ -81,6 +82,10 @@ final class RegulationUpdater {
 
     int getDocuments() {
         return preferences.getInt(KEY_DOCUMENTS, 0);
+    }
+
+    int getCaseDocuments() {
+        return preferences.getInt(KEY_CASE_DOCUMENTS, 0);
     }
 
     long getVersionCode() {
@@ -204,7 +209,7 @@ final class RegulationUpdater {
                 int percent = (int) Math.min(100, total * 100L / expected);
                 if (percent != lastPercent) {
                     lastPercent = percent;
-                    listener.onProgress("正在下载制度更新…", percent, required);
+            listener.onProgress("正在下载知识库更新…", percent, required);
                 }
             }
             output.flush();
@@ -224,7 +229,7 @@ final class RegulationUpdater {
         deleteTree(staging);
         if (!staging.mkdirs()) throw new IllegalStateException("无法建立更新临时目录");
         try {
-            listener.onProgress("正在安全解压制度库…", 100, required);
+            listener.onProgress("正在安全解压知识库…", 100, required);
             extractZip(archive, staging);
             File packageJson = new File(staging, "package.json");
             File index = new File(staging, "index.html");
@@ -234,7 +239,8 @@ final class RegulationUpdater {
             JSONObject installed = readJson(packageJson, 1024 * 1024);
             if (!"regulations".equals(installed.getString("scope"))
                     || installed.getLong("version_code") != manifest.getLong("version_code")
-                    || installed.getInt("documents") != manifest.getInt("documents")) {
+                    || installed.getInt("documents") != manifest.getInt("documents")
+                    || installed.optInt("case_documents", 0) != manifest.optInt("case_documents", 0)) {
                 throw new IllegalStateException("更新包内容与清单不一致");
             }
 
@@ -329,6 +335,7 @@ final class RegulationUpdater {
                 .putString(KEY_VERSION, installed.getString("version"))
                 .putLong(KEY_VERSION_CODE, installed.getLong("version_code"))
                 .putInt(KEY_DOCUMENTS, installed.getInt("documents"))
+                .putInt(KEY_CASE_DOCUMENTS, installed.optInt("case_documents", 0))
                 .apply();
     }
 
