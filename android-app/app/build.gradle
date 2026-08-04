@@ -1,0 +1,35 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.finreg.knowledgebase'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.finreg.knowledgebase'
+        minSdk 26
+        targetSdk 35
+        versionCode 8
+        versionName '1.6.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    packaging {
+        jniLibs.useLegacyPackaging = false
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

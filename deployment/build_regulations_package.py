@@ -1,0 +1,252 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import zipfile
+from datetime import datetime
+from pathlib import Path
+
+
+PROJECT = Path(__file__).resolve().parents[1]
+DEPLOYMENT = Path(__file__).resolve().parent
+BUILD = DEPLOYMENT / "build"
+DIST = DEPLOYMENT / "dist"
+APP_SCRIPT = PROJECT / "android-app" / "tools" / "slim-app.js"
+REPOSITORY = "revercgy-hub/financial-regulations-updates"
+SCOPE = "regulations"
+EXPECTED_DOCUMENTS = 2021
+SHARD_COUNT = 16
+KEEP_FIELDS = (
+    "collection",
+    "collection_id",
+    "category",
+    "agency",
+    "title",
+    "file_no",
+    "date",
+    "sort_date",
+    "status",
+    "page_path",
+)
+
+
+def source_root() -> Path:
+    candidates = [
+        manifest.parent.parent
+        for manifest in PROJECT.glob("*/data/manifest.json")
+        if manifest.parent.parent.name != "android-app"
+    ]
+    if len(candidates) != 1:
+        raise RuntimeError(f"Expected one unified knowledge base, found {len(candidates)}")
+    return candidates[0]
+
+
+def read_records(source: Path) -> list[dict[str, object]]:
+    raw = (source / "assets" / "search-index.js").read_text(encoding="utf-8")
+    prefix = "window.KB_DATA="
+    if not raw.startswith(prefix):
+        raise RuntimeError("Unexpected search-index.js prefix")
+    records = json.loads(raw[len(prefix) :].rstrip().rstrip(";"))
+    selected = [item for item in records if item.get("collection_id") == SCOPE]
+    if len(selected) != EXPECTED_DOCUMENTS:
+        raise RuntimeError(
+            f"Expected {EXPECTED_DOCUMENTS:,} regulation records, found {len(selected):,}"
+        )
+    return selected
+
+
+def copy_file(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(source, destination)
+    except OSError:
+        shutil.copy2(source, destination)
+
+
+def build_homepage(source: Path, destination: Path, generated_at: str) -> None:
+    html = (source / "index.html").read_text(encoding="utf-8")
+    html = re.sub(
+        r'\s*<article class="collection-card (?:red|gold)".*?</article>',
+        "",
+        html,
+        flags=re.DOTALL,
+    )
+    html = re.sub(r'\s*<a href="systems/regulations/index\.html">.*?</a>', "", html)
+    replacements = {
+        "FINANCIAL REGULATION · OFFLINE LIBRARY": "FINANCIAL REGULATION · ONLINE SYNC",
+        "金融监管统一知识库": "金融监管制度库",
+        "金融监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。":
+            "人民银行、国家金融监督管理总局和国家外汇管理局制度，联网同步更新。",
+        "<strong>5,438</strong><span>篇文档</span>":
+            "<strong>2,021</strong><span>篇制度</span>",
+        "<strong>11</strong><span>个分类</span>":
+            "<strong>3</strong><span>个监管机构</span>",
+        "<strong>3</strong><span>套来源库</span>":
+            "<strong>1</strong><span>套在线制度库</span>",
+        "在统一库中筛选": "筛选制度",
+        "统一全文检索": "制度全文检索",
+        "支持标题、正文、文号、机构、当事人、案由和处罚类型":
+            "支持标题、正文、文号、监管机构、状态和年份",
+        "例如：内幕交易、资本管理、会计准则第14号、银监发":
+            "例如：资本管理、支付结算、跨境资金、银监发",
+        "正在载入离线索引…": "正在载入制度索引…",
+        "<div class=\"offline-badge\"><span></span>离线可用</div>":
+            "<div class=\"offline-badge\"><span></span>已联网同步</div>",
+        '<script src="assets/search-index.js"></script>':
+            '<script src="assets/catalog.js"></script>',
+    }
+    for old, new in replacements.items():
+        if old not in html:
+            raise RuntimeError(f"Homepage marker not found: {old}")
+        html = html.replace(old, new)
+    html = re.sub(
+        r'<section class="usage-note">.*?</section>',
+        """<section class="usage-note">
+      <strong>联网同步版</strong>
+      <p>本地内容由 APP 从 GitHub 安全下载并校验；可在“导出与更多”中检查更新或恢复上一版本。</p>
+      <span>制度包生成于 %s</span>
+    </section>""" % generated_at,
+        html,
+        flags=re.DOTALL,
+    )
+    destination.write_text(html, encoding="utf-8", newline="\n")
+
+
+def stage_documents(source: Path, package: Path, records: list[dict[str, object]]) -> None:
+    for item in records:
+        relative = Path(str(item["page_path"]))
+        source_html = source / relative
+        if not source_html.is_file():
+            raise FileNotFoundError(source_html)
+        html = source_html.read_text(encoding="utf-8")
+        html = html.replace("../../打开知识库.html", "../../index.html")
+        destination_html = package / relative
+        destination_html.parent.mkdir(parents=True, exist_ok=True)
+        destination_html.write_text(html, encoding="utf-8", newline="\n")
+
+        markdown_relative = Path("data/markdown") / relative.relative_to("docs")
+        markdown_relative = markdown_relative.with_suffix(".md")
+        source_markdown = source / markdown_relative
+        if not source_markdown.is_file():
+            raise FileNotFoundError(source_markdown)
+        copy_file(source_markdown, package / markdown_relative)
+
+
+def build_index(package: Path, records: list[dict[str, object]]) -> None:
+    catalog = [{key: item.get(key, "") for key in KEEP_FIELDS} for item in records]
+    shard_paths = [f"assets/search-shards/{index:02d}.json" for index in range(SHARD_COUNT)]
+    catalog_path = package / "assets" / "catalog.js"
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    with catalog_path.open("w", encoding="utf-8", newline="\n") as output:
+        output.write("window.KB_CATALOG=")
+        json.dump(catalog, output, ensure_ascii=False, separators=(",", ":"))
+        output.write(";window.KB_SEARCH_SHARDS=")
+        json.dump(shard_paths, output, ensure_ascii=False, separators=(",", ":"))
+        output.write(";")
+
+    shards: list[list[list[object]]] = [[] for _ in range(SHARD_COUNT)]
+    weights = [0] * SHARD_COUNT
+    rows = [(index, str(item.get("search", ""))) for index, item in enumerate(records)]
+    for index, search_text in sorted(
+        rows, key=lambda row: len(row[1].encode("utf-8")), reverse=True
+    ):
+        shard_index = min(range(SHARD_COUNT), key=weights.__getitem__)
+        shards[shard_index].append([index, search_text])
+        weights[shard_index] += len(search_text.encode("utf-8"))
+
+    shard_root = package / "assets" / "search-shards"
+    shard_root.mkdir(parents=True, exist_ok=True)
+    for index, shard in enumerate(shards):
+        with (shard_root / f"{index:02d}.json").open(
+            "w", encoding="utf-8", newline="\n"
+        ) as output:
+            json.dump(shard, output, ensure_ascii=False, separators=(",", ":"))
+
+
+def zip_tree(source: Path, destination: Path) -> None:
+    with zipfile.ZipFile(
+        destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+    ) as archive:
+        for path in sorted(source.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(source).as_posix())
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", required=True, help="Data version, for example 20260805.1")
+    args = parser.parse_args()
+    if not re.fullmatch(r"[0-9]{8}\.[0-9]+", args.version):
+        raise SystemExit("--version must use YYYYMMDD.N format")
+
+    version_code = int(args.version.replace(".", ""))
+    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    source = source_root()
+    records = read_records(source)
+    package = BUILD / f"regulations-{args.version}"
+    if package.exists():
+        shutil.rmtree(package)
+    package.mkdir(parents=True)
+    DIST.mkdir(parents=True, exist_ok=True)
+
+    build_homepage(source, package / "index.html", generated_at)
+    copy_file(source / "assets" / "site.css", package / "assets" / "site.css")
+    copy_file(APP_SCRIPT, package / "assets" / "app.js")
+    stage_documents(source, package, records)
+    build_index(package, records)
+
+    package_manifest = {
+        "schema": 1,
+        "scope": SCOPE,
+        "version": args.version,
+        "version_code": version_code,
+        "generated_at": generated_at,
+        "documents": len(records),
+    }
+    (package / "package.json").write_text(
+        json.dumps(package_manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    asset_name = f"regulations-package-{args.version}.zip"
+    archive = DIST / asset_name
+    zip_tree(package, archive)
+    digest = sha256(archive)
+    tag = f"regulations-{args.version}"
+    latest = {
+        **package_manifest,
+        "min_app_version_code": 8,
+        "package_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset_name}",
+        "package_size": archive.stat().st_size,
+        "sha256": digest,
+        "app_version": "1.6.0",
+        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.6.0.apk",
+    }
+    latest_path = DIST / "latest.json"
+    latest_path.write_text(
+        json.dumps(latest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(
+        f"Built {archive.name}: {archive.stat().st_size / 1024 / 1024:.1f} MiB, "
+        f"{len(records):,} documents, sha256={digest}"
+    )
+    print(f"Manifest: {latest_path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "scope": "regulations",
+  "version": "20260805.1",
+  "version_code": 202608051,
+  "generated_at": "2026-08-05T02:02:40+08:00",
+  "documents": 2021,
+  "min_app_version_code": 8,
+  "package_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/regulations-20260805.1/regulations-package-20260805.1.zip",
+  "package_size": 28627515,
+  "sha256": "987f67adb73efd9d5b08d2185ee1ba3cd909babdab55a1b38d0e009c415309fe",
+  "app_version": "1.6.0",
+  "app_download_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/regulations-20260805.1/FinReg-KnowledgeBase-Online-v1.6.0.apk"
+}
