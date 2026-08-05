@@ -21,7 +21,7 @@ CASE_SITE = PROJECT / "penalty_cases_site"
 REPOSITORY = "revercgy-hub/financial-regulations-updates"
 SCOPE = "regulations"
 APP_VERSION = "1.7.4"
-EXPECTED_DOCUMENTS = {
+MINIMUM_DOCUMENTS = {
     "regulations": 2021,
     "accounting": 1291,
 }
@@ -52,20 +52,22 @@ def source_root() -> Path:
     return candidates[0]
 
 
-def read_records(source: Path) -> list[dict[str, object]]:
+def read_records(source: Path) -> tuple[list[dict[str, object]], dict[str, int]]:
     raw = (source / "assets" / "search-index.js").read_text(encoding="utf-8")
     prefix = "window.KB_DATA="
     if not raw.startswith(prefix):
         raise RuntimeError("Unexpected search-index.js prefix")
     records = json.loads(raw[len(prefix) :].rstrip().rstrip(";"))
-    selected = [item for item in records if item.get("collection_id") in EXPECTED_DOCUMENTS]
-    for collection, expected in EXPECTED_DOCUMENTS.items():
+    selected = [item for item in records if item.get("collection_id") in MINIMUM_DOCUMENTS]
+    counts = {}
+    for collection, minimum in MINIMUM_DOCUMENTS.items():
         actual = sum(item.get("collection_id") == collection for item in selected)
-        if actual != expected:
+        counts[collection] = actual
+        if actual < minimum:
             raise RuntimeError(
-                f"Expected {expected:,} {collection} records, found {actual:,}"
+                f"Expected at least {minimum:,} {collection} records, found {actual:,}"
             )
-    return selected
+    return selected, counts
 
 
 def copy_file(source: Path, destination: Path) -> None:
@@ -77,13 +79,18 @@ def copy_file(source: Path, destination: Path) -> None:
 
 
 def build_homepage(
-    source: Path, destination: Path, generated_at: str, version: str
+    source: Path,
+    destination: Path,
+    generated_at: str,
+    version: str,
+    collection_counts: dict[str, int],
+    case_documents: int,
 ) -> None:
     html = (source / "index.html").read_text(encoding="utf-8")
-    case_card = """<article class="collection-card red case-library-card" aria-pressed="false">
+    case_card = f"""<article class="collection-card red case-library-card" aria-pressed="false">
           <div class="collection-card-main">
             <span class="card-label">案例库</span>
-            <strong>2,810</strong>
+            <strong>{case_documents:,}</strong>
             <small>财政部、证监会、审计署、中央纪委国家监委公开案例</small>
           </div>
           <div class="collection-guide">按来源、年份、主体、案由和处理结果查询</div>
@@ -109,12 +116,6 @@ def build_homepage(
         "金融监管统一知识库": "金融、会计与案例知识库",
         "金融监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。":
             "金融监管制度、会计制度与财政、证监、审计、纪检监察案例，联网同步更新。",
-        "<strong>5,438</strong><span>篇文档</span>":
-            "<strong>6,122</strong><span>篇资料</span>",
-        "<strong>11</strong><span>个分类</span>":
-            "<strong>4</strong><span>个案例来源</span>",
-        "<strong>3</strong><span>套来源库</span>":
-            "<strong>3</strong><span>套在线知识库</span>",
         "在统一库中筛选": "在制度库中筛选",
         "统一全文检索": "金融与会计制度检索",
         "支持标题、正文、文号、机构、当事人、案由和处罚类型":
@@ -133,6 +134,24 @@ def build_homepage(
         if old not in html:
             raise RuntimeError(f"Homepage marker not found: {old}")
         html = html.replace(old, new)
+    statistic_replacements = (
+        (
+            r"<strong>[\d,]+</strong><span>篇文档</span>",
+            f"<strong>{sum(collection_counts.values()) + case_documents:,}</strong><span>篇资料</span>",
+        ),
+        (
+            r"<strong>\d+</strong><span>个分类</span>",
+            "<strong>4</strong><span>个案例来源</span>",
+        ),
+        (
+            r"<strong>3</strong><span>套来源库</span>",
+            "<strong>3</strong><span>套在线知识库</span>",
+        ),
+    )
+    for pattern, replacement in statistic_replacements:
+        html, count = re.subn(pattern, replacement, html, count=1)
+        if count != 1:
+            raise RuntimeError(f"Homepage statistic marker not found: {pattern}")
     html = re.sub(
         r'<section class="usage-note">.*?</section>',
         """<section class="usage-note">
@@ -266,25 +285,34 @@ def main() -> None:
     if not re.fullmatch(r"[0-9]{8}\.[0-9]+", args.version):
         raise SystemExit("--version must use YYYYMMDD.N format")
 
-    version_code = int(args.version.replace(".", ""))
+    day, sequence = args.version.split(".", 1)
+    if int(sequence) > 99:
+        raise SystemExit("At most 99 releases are supported per day")
+    version_code = int(day) * 100 + int(sequence)
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
     source = source_root()
-    records = read_records(source)
+    records, collection_counts = read_records(source)
     package = BUILD / f"regulations-{args.version}"
     if package.exists():
         shutil.rmtree(package)
     package.mkdir(parents=True)
     DIST.mkdir(parents=True, exist_ok=True)
 
-    build_homepage(source, package / "index.html", generated_at, args.version)
+    case_documents, case_by_source = stage_cases(package)
+    build_homepage(
+        source,
+        package / "index.html",
+        generated_at,
+        args.version,
+        collection_counts,
+        case_documents,
+    )
     copy_file(source / "assets" / "site.css", package / "assets" / "site.css")
     copy_file(APP_SCRIPT, package / "assets" / "app.js")
     stage_documents(source, package, records)
     build_index(package, records)
-    case_documents, case_by_source = stage_cases(package)
-
-    regulation_documents = EXPECTED_DOCUMENTS["regulations"]
-    accounting_documents = EXPECTED_DOCUMENTS["accounting"]
+    regulation_documents = collection_counts["regulations"]
+    accounting_documents = collection_counts["accounting"]
     package_manifest = {
         "schema": 1,
         "scope": SCOPE,

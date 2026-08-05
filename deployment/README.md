@@ -24,3 +24,15 @@ APP 固定从以下地址读取清单：
 `https://raw.githubusercontent.com/revercgy-hub/financial-regulations-updates/main/deployment/update/latest.json`
 
 APP 启动时检查该清单，Android 后台任务也会在联网时每天检查一次。金融监管制度、会计制度和案例位于同一个带版本号的更新包中，经大小和 SHA-256 校验后一起切换，避免各库版本不一致。
+
+## GitHub 服务器自动更新
+
+`.github/workflows/automatic-knowledge-update.yml` 使用上一版 Release 中的 `knowledge-source-state-<version>.zip` 恢复经过核验的源数据，然后执行：
+
+- 每天北京时间 04:20：财政部、证监会、中央纪委国家监委案例增量检查。
+- 每周日北京时间 04:20：在每日案例检查基础上，追加金融制度、会计制度和审计署完整检查。
+- 手动触发：可选择 `cases` 或 `all`，并支持只构建不发布的 `dry_run`。
+
+自动任务先比较三套源库的规范化内容指纹。没有变化时不生成 Release；发现变化时先执行来源数量下限、四来源集合、ZIP 路径、文件数量和 SHA-256 校验，再创建 Release，最后才提交 `deployment/update/latest.json`。任一步失败都不会覆盖手机当前使用的版本。
+
+工作流需要仓库 Actions 的 `GITHUB_TOKEN` 具备 `contents: write` 权限；不需要额外的个人令牌或服务器密码。

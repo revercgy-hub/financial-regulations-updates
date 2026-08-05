@@ -57,13 +57,13 @@ def main() -> None:
     parser.add_argument(
         "--sources",
         default="mof,csrc,ccdi",
-        help="comma-separated live sources to refresh: mof,csrc,ccdi",
+        help="comma-separated sources to refresh: mof,csrc,ccdi,audit",
     )
     parser.add_argument("--ccdi-pages", type=int, default=2)
     parser.add_argument("--ccdi-detail-limit", type=int, default=40)
     args = parser.parse_args()
     requested = {item.strip().lower() for item in args.sources.split(",") if item.strip()}
-    unknown = requested - {"mof", "csrc", "ccdi"}
+    unknown = requested - {"mof", "csrc", "ccdi", "audit"}
     if unknown or not requested:
         raise SystemExit(f"Invalid --sources value: {args.sources}")
 
@@ -77,6 +77,11 @@ def main() -> None:
         raise RuntimeError("The verified Audit Office archive is missing; refusing to rebuild.")
 
     session = cases.make_session()
+    if "audit" in requested:
+        print("Refreshing National Audit Office cases...")
+        refreshed_audit = cases.parse_audit_cases(session)
+        require_healthy("审计署", refreshed_audit, audit_records, 0.99)
+        audit_records = refreshed_audit
     mof_records = by_source.get("财政部", [])
     if "mof" in requested:
         print("Refreshing Ministry of Finance cases...")

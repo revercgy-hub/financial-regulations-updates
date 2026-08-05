@@ -3,3 +3,12 @@
 !/README.md
 !/android-app/
 !/deployment/
+!/.github/
+!/.github/workflows/
+!/.github/workflows/automatic-knowledge-update.yml
+!/build_penalty_cases.py
+!/build_unified_offline_kb.py
+!/build_iweicha_ffs_site.py
+!/build_maodocs_site.py
+!/crawl_iweicha_ffs.py
+!/crawl_maodocs.py
