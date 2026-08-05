@@ -20,7 +20,7 @@
 .\build-apk.ps1
 ```
 
-输出：`FinReg-KnowledgeBase-Online-v1.7.3.apk`
+输出：`FinReg-KnowledgeBase-Online-v1.7.4.apk`
 
 首次构建会把 JDK 17、Android SDK Platform 35、Build Tools 35.0.0 和 Gradle 8.9 下载到 `%LOCALAPPDATA%\FinRegAndroidBuild`。
 

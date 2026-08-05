@@ -20,6 +20,7 @@ CASE_KB = PROJECT / "penalty_cases_kb"
 CASE_SITE = PROJECT / "penalty_cases_site"
 REPOSITORY = "revercgy-hub/financial-regulations-updates"
 SCOPE = "regulations"
+APP_VERSION = "1.7.4"
 EXPECTED_DOCUMENTS = {
     "regulations": 2021,
     "accounting": 1291,
@@ -79,30 +80,43 @@ def build_homepage(
     source: Path, destination: Path, generated_at: str, version: str
 ) -> None:
     html = (source / "index.html").read_text(encoding="utf-8")
-    html = re.sub(
+    case_card = """<article class="collection-card red case-library-card" aria-pressed="false">
+          <div class="collection-card-main">
+            <span class="card-label">案例库</span>
+            <strong>2,810</strong>
+            <small>财政部、证监会、审计署、中央纪委国家监委公开案例</small>
+          </div>
+          <div class="collection-guide">按来源、年份、主体、案由和处理结果查询</div>
+          <div class="collection-actions" style="grid-template-columns:1fr">
+            <a href="cases/index.html">进入案例库 <span>→</span></a>
+          </div>
+        </article>"""
+    html, case_card_count = re.subn(
         r'\s*<article class="collection-card red".*?</article>',
-        "",
+        "\n" + case_card,
         html,
         flags=re.DOTALL,
     )
+    if case_card_count != 1:
+        raise RuntimeError(f"Expected one case card placeholder, found {case_card_count}")
     html = re.sub(
         r'\s*<a href="systems/(?:regulations|accounting)/index\.html">.*?</a>',
         "",
         html,
     )
     replacements = {
-        "FINANCIAL REGULATION · OFFLINE LIBRARY": "FINANCIAL & ACCOUNTING · ONLINE SYNC",
-        "金融监管统一知识库": "金融与会计制度库",
+        "FINANCIAL REGULATION · OFFLINE LIBRARY": "FINANCIAL, ACCOUNTING & CASES · ONLINE SYNC",
+        "金融监管统一知识库": "金融、会计与案例知识库",
         "金融监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。":
-            "金融监管制度与会计、审计、证券、内控、评估制度，联网同步更新。",
+            "金融监管制度、会计制度与财政、证监、审计、纪检监察案例，联网同步更新。",
         "<strong>5,438</strong><span>篇文档</span>":
-            "<strong>3,312</strong><span>篇制度</span>",
+            "<strong>6,122</strong><span>篇资料</span>",
         "<strong>11</strong><span>个分类</span>":
-            "<strong>8</strong><span>个分类</span>",
+            "<strong>4</strong><span>个案例来源</span>",
         "<strong>3</strong><span>套来源库</span>":
-            "<strong>2</strong><span>套在线制度库</span>",
+            "<strong>3</strong><span>套在线知识库</span>",
         "在统一库中筛选": "在制度库中筛选",
-        "统一全文检索": "金融与会计全文检索",
+        "统一全文检索": "金融与会计制度检索",
         "支持标题、正文、文号、机构、当事人、案由和处罚类型":
             "支持标题、正文、文号、机构、分类、状态和年份",
         "例如：内幕交易、资本管理、会计准则第14号、银监发":
@@ -301,8 +315,8 @@ def main() -> None:
         "package_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset_name}",
         "package_size": archive.stat().st_size,
         "sha256": digest,
-        "app_version": "1.7.3",
-        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.3.apk",
+        "app_version": APP_VERSION,
+        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v{APP_VERSION}.apk",
     }
     latest_path = DIST / "latest.json"
     latest_path.write_text(
