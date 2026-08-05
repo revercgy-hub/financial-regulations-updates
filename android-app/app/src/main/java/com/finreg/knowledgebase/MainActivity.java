@@ -61,6 +61,7 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         updater = new RegulationUpdater(this, io);
+        KnowledgeUpdateScheduler.schedule(this);
         buildLayout();
         configureWebView();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -73,6 +74,16 @@ public final class MainActivity extends Activity {
             showWaitingPage();
             checkForUpdates(false);
         }
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        KnowledgeUpdateScheduler.setAppForeground(true);
+    }
+
+    @Override protected void onStop() {
+        KnowledgeUpdateScheduler.setAppForeground(false);
+        super.onStop();
     }
 
     private void buildLayout() {
@@ -619,7 +630,8 @@ public final class MainActivity extends Activity {
                         "制度数量：" + updater.getDocuments() + " 篇\n\n" +
                         "案例数量：" + updater.getCaseDocuments() + " 条\n" +
                         "案例来源：财政部、证监会、审计署、中央纪委国家监委\n\n" +
-                        "启动时自动联网检查知识库更新。下载包会校验文件大小和 SHA-256，" +
+                        "启动时检查更新，并由 Android 在联网时每天后台检查一次。" +
+                        "制度库和案例库始终作为同一版本更新。下载包会校验文件大小和 SHA-256，" +
                         "安装失败不会覆盖现有数据，并保留上一版本用于回滚。\n\n" +
                         "更新源：GitHub · " + RegulationUpdater.MANIFEST_URL)
                 .setPositiveButton("确定", null).show();

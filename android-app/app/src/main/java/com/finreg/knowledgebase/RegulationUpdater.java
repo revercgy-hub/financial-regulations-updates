@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -33,6 +35,7 @@ final class RegulationUpdater {
     private static final long MAX_PACKAGE_BYTES = 512L * 1024L * 1024L;
     private static final long MAX_EXTRACTED_BYTES = 768L * 1024L * 1024L;
     private static final int MAX_ZIP_ENTRIES = 20_000;
+    private static final AtomicBoolean UPDATE_RUNNING = new AtomicBoolean(false);
 
     interface Listener {
         void onChecking(boolean required);
@@ -93,10 +96,18 @@ final class RegulationUpdater {
     }
 
     void check(boolean manual, Listener listener) {
+        check(manual, () -> true, listener);
+    }
+
+    void check(boolean manual, BooleanSupplier installAllowed, Listener listener) {
         final boolean required = !hasCurrentPackage();
         executor.execute(() -> {
-            listener.onChecking(required);
+            if (!UPDATE_RUNNING.compareAndSet(false, true)) {
+                listener.onError("已有知识库更新任务正在运行", hasCurrentPackage(), manual);
+                return;
+            }
             try {
+                listener.onChecking(required);
                 JSONObject manifest = fetchManifest();
                 validateManifest(manifest);
                 String version = manifest.getString("version");
@@ -106,29 +117,36 @@ final class RegulationUpdater {
                     listener.onNoUpdate(getVersion(), getDocuments(), manual);
                     return;
                 }
+                ensureInstallAllowed(installAllowed);
                 long packageSize = manifest.getLong("package_size");
                 listener.onDownloadStarted(version, packageSize, required);
                 File archive = downloadPackage(manifest, listener, required);
                 try {
-                    installPackage(archive, manifest, listener, required);
+                    installPackage(archive, manifest, listener, required, installAllowed);
                 } finally {
                     if (archive.exists() && !archive.delete()) archive.deleteOnExit();
                 }
                 listener.onReady(true, version, documents);
             } catch (Exception error) {
                 listener.onError(readableMessage(error), hasCurrentPackage(), manual);
+            } finally {
+                UPDATE_RUNNING.set(false);
             }
         });
     }
 
     void rollback(Listener listener) {
         executor.execute(() -> {
-            if (!hasBackup()) {
-                listener.onError("没有可恢复的上一版本", hasCurrentPackage(), true);
+            if (!UPDATE_RUNNING.compareAndSet(false, true)) {
+                listener.onError("已有知识库更新任务正在运行", hasCurrentPackage(), true);
                 return;
             }
-            File oldCurrent = new File(root, "rollback-old");
             try {
+                if (!hasBackup()) {
+                    listener.onError("没有可恢复的上一版本", hasCurrentPackage(), true);
+                    return;
+                }
+                File oldCurrent = new File(root, "rollback-old");
                 deleteTree(oldCurrent);
                 if (current.exists() && !current.renameTo(oldCurrent)) {
                     throw new IllegalStateException("无法暂存当前版本");
@@ -145,6 +163,8 @@ final class RegulationUpdater {
                 listener.onReady(true, installed.getString("version"), installed.getInt("documents"));
             } catch (Exception error) {
                 listener.onError(readableMessage(error), hasCurrentPackage(), true);
+            } finally {
+                UPDATE_RUNNING.set(false);
             }
         });
     }
@@ -262,7 +282,8 @@ final class RegulationUpdater {
     }
 
     private void installPackage(
-            File archive, JSONObject manifest, Listener listener, boolean required
+            File archive, JSONObject manifest, Listener listener, boolean required,
+            BooleanSupplier installAllowed
     ) throws Exception {
         File staging = new File(root, "staging-" + System.currentTimeMillis());
         deleteTree(staging);
@@ -283,7 +304,9 @@ final class RegulationUpdater {
                 throw new IllegalStateException("更新包内容与清单不一致");
             }
 
+            ensureInstallAllowed(installAllowed);
             deleteTree(backup);
+            ensureInstallAllowed(installAllowed);
             boolean movedCurrent = false;
             if (current.exists()) {
                 if (!current.renameTo(backup)) throw new IllegalStateException("无法备份当前制度库");
@@ -297,6 +320,12 @@ final class RegulationUpdater {
         } catch (Exception error) {
             deleteTree(staging);
             throw error;
+        }
+    }
+
+    private static void ensureInstallAllowed(BooleanSupplier installAllowed) {
+        if (!installAllowed.getAsBoolean()) {
+            throw new IllegalStateException("APP 正在前台使用，后台更新将稍后重试");
         }
     }
 

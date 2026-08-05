@@ -284,8 +284,8 @@ def main() -> None:
         "package_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset_name}",
         "package_size": archive.stat().st_size,
         "sha256": digest,
-        "app_version": "1.7.1",
-        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.1.apk",
+        "app_version": "1.7.2",
+        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.2.apk",
     }
     latest_path = DIST / "latest.json"
     latest_path.write_text(
