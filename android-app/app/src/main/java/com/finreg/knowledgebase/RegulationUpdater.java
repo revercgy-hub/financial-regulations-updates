@@ -30,6 +30,8 @@ final class RegulationUpdater {
     private static final String KEY_VERSION = "version";
     private static final String KEY_VERSION_CODE = "version_code";
     private static final String KEY_DOCUMENTS = "documents";
+    private static final String KEY_REGULATION_DOCUMENTS = "regulation_documents";
+    private static final String KEY_ACCOUNTING_DOCUMENTS = "accounting_documents";
     private static final String KEY_CASE_DOCUMENTS = "case_documents";
     private static final long MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final long MAX_PACKAGE_BYTES = 512L * 1024L * 1024L;
@@ -89,6 +91,14 @@ final class RegulationUpdater {
 
     int getCaseDocuments() {
         return preferences.getInt(KEY_CASE_DOCUMENTS, 0);
+    }
+
+    int getRegulationDocuments() {
+        return preferences.getInt(KEY_REGULATION_DOCUMENTS, getDocuments());
+    }
+
+    int getAccountingDocuments() {
+        return preferences.getInt(KEY_ACCOUNTING_DOCUMENTS, 0);
     }
 
     long getVersionCode() {
@@ -300,6 +310,10 @@ final class RegulationUpdater {
             if (!"regulations".equals(installed.getString("scope"))
                     || installed.getLong("version_code") != manifest.getLong("version_code")
                     || installed.getInt("documents") != manifest.getInt("documents")
+                    || installed.optInt("regulation_documents", installed.getInt("documents"))
+                        != manifest.optInt("regulation_documents", manifest.getInt("documents"))
+                    || installed.optInt("accounting_documents", 0)
+                        != manifest.optInt("accounting_documents", 0)
                     || installed.optInt("case_documents", 0) != manifest.optInt("case_documents", 0)) {
                 throw new IllegalStateException("更新包内容与清单不一致");
             }
@@ -412,6 +426,9 @@ final class RegulationUpdater {
                 .putString(KEY_VERSION, installed.getString("version"))
                 .putLong(KEY_VERSION_CODE, installed.getLong("version_code"))
                 .putInt(KEY_DOCUMENTS, installed.getInt("documents"))
+                .putInt(KEY_REGULATION_DOCUMENTS,
+                        installed.optInt("regulation_documents", installed.getInt("documents")))
+                .putInt(KEY_ACCOUNTING_DOCUMENTS, installed.optInt("accounting_documents", 0))
                 .putInt(KEY_CASE_DOCUMENTS, installed.optInt("case_documents", 0))
                 .apply();
     }

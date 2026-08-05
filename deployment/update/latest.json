@@ -1,10 +1,12 @@
 {
   "schema": 1,
   "scope": "regulations",
-  "version": "20260805.5",
-  "version_code": 202608055,
-  "generated_at": "2026-08-05T03:30:05+08:00",
-  "documents": 2021,
+  "version": "20260805.6",
+  "version_code": 202608056,
+  "generated_at": "2026-08-05T13:49:45+08:00",
+  "documents": 3312,
+  "regulation_documents": 2021,
+  "accounting_documents": 1291,
   "case_documents": 2810,
   "case_by_source": {
     "财政部": 106,
@@ -13,9 +15,9 @@
     "审计署": 608
   },
   "min_app_version_code": 8,
-  "package_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260805.5/knowledge-package-20260805.5.zip",
-  "package_size": 52415374,
-  "sha256": "8490fa0d7c95434e2455bdc07531156aff1144c1736c7d9b689e24a667b63941",
-  "app_version": "1.7.2",
-  "app_download_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260805.5/FinReg-KnowledgeBase-Online-v1.7.2.apk"
+  "package_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260805.6/knowledge-package-20260805.6.zip",
+  "package_size": 77531422,
+  "sha256": "a0afd031515124fb290368bb9959a6974938641b4ae030d97051ed14c40669de",
+  "app_version": "1.7.3",
+  "app_download_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260805.6/FinReg-KnowledgeBase-Online-v1.7.3.apk"
 }
