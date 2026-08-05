@@ -101,7 +101,7 @@
 
   function setCollection(value) {
     collectionFilter.value = value;
-    document.querySelectorAll('.collection-card').forEach(card => {
+    document.querySelectorAll('.collection-card[data-collection]').forEach(card => {
       card.setAttribute('aria-pressed', String(card.dataset.collection === value));
     });
     refreshCategoryOptions();
@@ -302,7 +302,7 @@
       .some(option => option.value === forcedCollection) ? forcedCollection : '';
     categoryFilter.value = '';
     yearFilter.value = '';
-    document.querySelectorAll('.collection-card').forEach(card => {
+    document.querySelectorAll('.collection-card[data-collection]').forEach(card => {
       card.setAttribute('aria-pressed', String(card.dataset.collection === collectionFilter.value));
     });
     refreshCategoryOptions();
@@ -359,7 +359,7 @@
     }
   }
 
-  document.querySelectorAll('.collection-card').forEach(card => {
+  document.querySelectorAll('.collection-card[data-collection]').forEach(card => {
     card.setAttribute('aria-pressed', String(card.dataset.collection === collectionFilter.value));
     card.querySelector('.collection-filter-action').addEventListener('click', () => {
       setCollection(card.getAttribute('aria-pressed') === 'true' ? '' : card.dataset.collection);

@@ -11,7 +11,7 @@ python .\deployment\refresh_cases.py --ccdi-pages 2 --ccdi-detail-limit 40
 生成包含金融监管制度库、会计制度库和四来源案例库的 APP 联网更新包：
 
 ```powershell
-python .\deployment\build_regulations_package.py --version 20260805.7
+python .\deployment\build_regulations_package.py --version 20260805.8
 ```
 
 输出文件位于 `deployment/dist/`：

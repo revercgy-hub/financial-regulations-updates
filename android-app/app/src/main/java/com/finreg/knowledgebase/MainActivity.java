@@ -110,7 +110,7 @@ public final class MainActivity extends Activity {
         bar.addView(home);
 
         title = new TextView(this);
-        title.setText("金融与会计知识库");
+        title.setText("金融会计与案例库");
         title.setTextColor(Color.WHITE);
         title.setTextSize(18);
         title.setMaxLines(1);
@@ -603,7 +603,7 @@ public final class MainActivity extends Activity {
             progressParams.topMargin = dp(18);
             layout.addView(updateProgress, progressParams);
             updateDialog = new AlertDialog.Builder(this)
-                    .setTitle("联网同步金融与会计知识库")
+                    .setTitle("联网同步金融会计与案例库")
                     .setView(layout)
                     .setCancelable(false)
                     .create();
@@ -627,7 +627,7 @@ public final class MainActivity extends Activity {
         String html = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">" +
                 "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
                 "<body style=\"font-family:sans-serif;background:#f3f6f5;color:#173a35;padding:48px 24px\">" +
-                "<h2>正在准备金融与会计知识库</h2><p>首次使用需要联网下载金融制度、会计制度与案例数据；以后会自动检查更新。</p>" +
+                "<h2>正在准备金融会计与案例库</h2><p>首次使用需要联网下载金融制度、会计制度与案例数据；以后会自动检查更新。</p>" +
                 "</body></html>";
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
@@ -637,7 +637,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showAbout() {
-        new AlertDialog.Builder(this).setTitle("金融与会计知识库 · 联网同步版")
+        new AlertDialog.Builder(this).setTitle("金融会计与案例库 · 联网同步版")
                 .setMessage("APP 版本：" + BuildConfig.VERSION_NAME + "\n" +
                         "制度版本：" + updater.getVersion() + "\n" +
                         "金融监管制度：" + updater.getRegulationDocuments() + " 篇\n" +
@@ -772,6 +772,10 @@ public final class MainActivity extends Activity {
     private void navigateBack() {
         if (webView == null) return;
         String url = webView.getUrl();
+        if (url != null && matchesHome(url, libraryHomeUrl(LIBRARY_CASES))) {
+            openLibraryHome(LIBRARY_REGULATIONS);
+            return;
+        }
         if (isHomeUrl(url)) {
             resetSearchOrToast();
         } else if (isMarkdownUrl(url) && webView.canGoBack()) {
@@ -792,8 +796,13 @@ public final class MainActivity extends Activity {
             finish();
             return;
         }
-        if (!isHomeUrl(webView.getUrl())) {
-            if (isMarkdownUrl(webView.getUrl()) && webView.canGoBack()) webView.goBack();
+        String url = webView.getUrl();
+        if (url != null && matchesHome(url, libraryHomeUrl(LIBRARY_CASES))) {
+            openLibraryHome(LIBRARY_REGULATIONS);
+            return;
+        }
+        if (!isHomeUrl(url)) {
+            if (isMarkdownUrl(url) && webView.canGoBack()) webView.goBack();
             else loadSearchHome(false);
             return;
         }
