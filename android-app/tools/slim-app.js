@@ -293,16 +293,17 @@
     }, 260);
   }
 
-  function resetSearch(focusInput) {
+  function resetSearch(focusInput, forcedCollection) {
     const wasActive = hasActiveSearch();
     stopCurrentSearch();
     clearTimeout(debounceTimer);
     input.value = '';
-    collectionFilter.value = '';
+    collectionFilter.value = [...collectionFilter.options]
+      .some(option => option.value === forcedCollection) ? forcedCollection : '';
     categoryFilter.value = '';
     yearFilter.value = '';
     document.querySelectorAll('.collection-card').forEach(card => {
-      card.setAttribute('aria-pressed', 'false');
+      card.setAttribute('aria-pressed', String(card.dataset.collection === collectionFilter.value));
     });
     refreshCategoryOptions();
     visible = PAGE_SIZE;
@@ -393,7 +394,7 @@
   document.getElementById('resetAll').addEventListener('click', () => resetSearch(true));
 
   // Native Android toolbar/back actions call these directly. No file:// History API is used.
-  window.KB_RESET_SEARCH = () => resetSearch(true);
+  window.KB_RESET_SEARCH = forcedCollection => resetSearch(true, forcedCollection);
   window.KB_HAS_ACTIVE_SEARCH = () => hasActiveSearch();
   render();
 })();

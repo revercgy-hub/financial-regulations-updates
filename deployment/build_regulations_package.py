@@ -20,7 +20,10 @@ CASE_KB = PROJECT / "penalty_cases_kb"
 CASE_SITE = PROJECT / "penalty_cases_site"
 REPOSITORY = "revercgy-hub/financial-regulations-updates"
 SCOPE = "regulations"
-EXPECTED_DOCUMENTS = 2021
+EXPECTED_DOCUMENTS = {
+    "regulations": 2021,
+    "accounting": 1291,
+}
 EXPECTED_CASE_SOURCES = {"财政部", "证监会", "审计署", "中央纪委国家监委"}
 SHARD_COUNT = 16
 KEEP_FIELDS = (
@@ -54,11 +57,13 @@ def read_records(source: Path) -> list[dict[str, object]]:
     if not raw.startswith(prefix):
         raise RuntimeError("Unexpected search-index.js prefix")
     records = json.loads(raw[len(prefix) :].rstrip().rstrip(";"))
-    selected = [item for item in records if item.get("collection_id") == SCOPE]
-    if len(selected) != EXPECTED_DOCUMENTS:
-        raise RuntimeError(
-            f"Expected {EXPECTED_DOCUMENTS:,} regulation records, found {len(selected):,}"
-        )
+    selected = [item for item in records if item.get("collection_id") in EXPECTED_DOCUMENTS]
+    for collection, expected in EXPECTED_DOCUMENTS.items():
+        actual = sum(item.get("collection_id") == collection for item in selected)
+        if actual != expected:
+            raise RuntimeError(
+                f"Expected {expected:,} {collection} records, found {actual:,}"
+            )
     return selected
 
 
@@ -73,30 +78,34 @@ def copy_file(source: Path, destination: Path) -> None:
 def build_homepage(source: Path, destination: Path, generated_at: str) -> None:
     html = (source / "index.html").read_text(encoding="utf-8")
     html = re.sub(
-        r'\s*<article class="collection-card (?:red|gold)".*?</article>',
+        r'\s*<article class="collection-card red".*?</article>',
         "",
         html,
         flags=re.DOTALL,
     )
-    html = re.sub(r'\s*<a href="systems/regulations/index\.html">.*?</a>', "", html)
+    html = re.sub(
+        r'\s*<a href="systems/(?:regulations|accounting)/index\.html">.*?</a>',
+        "",
+        html,
+    )
     replacements = {
-        "FINANCIAL REGULATION · OFFLINE LIBRARY": "FINANCIAL REGULATION · ONLINE SYNC",
-        "金融监管统一知识库": "金融监管制度库",
+        "FINANCIAL REGULATION · OFFLINE LIBRARY": "FINANCIAL & ACCOUNTING · ONLINE SYNC",
+        "金融监管统一知识库": "金融与会计制度库",
         "金融监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。":
-            "人民银行、国家金融监督管理总局和国家外汇管理局制度，联网同步更新。",
+            "金融监管制度与会计、审计、证券、内控、评估制度，联网同步更新。",
         "<strong>5,438</strong><span>篇文档</span>":
-            "<strong>2,021</strong><span>篇制度</span>",
+            "<strong>3,312</strong><span>篇制度</span>",
         "<strong>11</strong><span>个分类</span>":
-            "<strong>3</strong><span>个监管机构</span>",
+            "<strong>8</strong><span>个分类</span>",
         "<strong>3</strong><span>套来源库</span>":
-            "<strong>1</strong><span>套在线制度库</span>",
-        "在统一库中筛选": "筛选制度",
-        "统一全文检索": "制度全文检索",
+            "<strong>2</strong><span>套在线制度库</span>",
+        "在统一库中筛选": "在制度库中筛选",
+        "统一全文检索": "金融与会计全文检索",
         "支持标题、正文、文号、机构、当事人、案由和处罚类型":
-            "支持标题、正文、文号、监管机构、状态和年份",
+            "支持标题、正文、文号、机构、分类、状态和年份",
         "例如：内幕交易、资本管理、会计准则第14号、银监发":
-            "例如：资本管理、支付结算、跨境资金、银监发",
-        "正在载入离线索引…": "正在载入制度索引…",
+            "例如：资本管理、会计准则第14号、内部控制、银监发",
+        "正在载入离线索引…": "正在载入金融与会计制度索引…",
         "<div class=\"offline-badge\"><span></span>离线可用</div>":
             "<div class=\"offline-badge\"><span></span>已联网同步</div>",
         '<script src="assets/search-index.js"></script>':
@@ -110,9 +119,9 @@ def build_homepage(source: Path, destination: Path, generated_at: str) -> None:
         r'<section class="usage-note">.*?</section>',
         """<section class="usage-note">
       <strong>联网同步版</strong>
-      <p>本地内容由 APP 从 GitHub 安全下载并校验；可在“导出与更多”中检查更新、进入案例库或恢复上一版本。</p>
+      <p>本地内容由 APP 从 GitHub 安全下载并校验；金融监管制度、会计制度和案例库随同一版本自动更新。</p>
       <p><a href="cases/index.html">进入财政、证监会、审计、纪检监察案例库</a></p>
-      <span>制度包生成于 %s</span>
+      <span>知识库生成于 %s</span>
     </section>""" % generated_at,
         html,
         flags=re.DOTALL,
@@ -256,6 +265,8 @@ def main() -> None:
     build_index(package, records)
     case_documents, case_by_source = stage_cases(package)
 
+    regulation_documents = EXPECTED_DOCUMENTS["regulations"]
+    accounting_documents = EXPECTED_DOCUMENTS["accounting"]
     package_manifest = {
         "schema": 1,
         "scope": SCOPE,
@@ -263,6 +274,8 @@ def main() -> None:
         "version_code": version_code,
         "generated_at": generated_at,
         "documents": len(records),
+        "regulation_documents": regulation_documents,
+        "accounting_documents": accounting_documents,
         "case_documents": case_documents,
         "case_by_source": case_by_source,
     }
@@ -284,8 +297,8 @@ def main() -> None:
         "package_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{asset_name}",
         "package_size": archive.stat().st_size,
         "sha256": digest,
-        "app_version": "1.7.2",
-        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.2.apk",
+        "app_version": "1.7.3",
+        "app_download_url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/FinReg-KnowledgeBase-Online-v1.7.3.apk",
     }
     latest_path = DIST / "latest.json"
     latest_path.write_text(
@@ -295,7 +308,8 @@ def main() -> None:
     )
     print(
         f"Built {archive.name}: {archive.stat().st_size / 1024 / 1024:.1f} MiB, "
-        f"{len(records):,} regulations + {case_documents:,} cases, sha256={digest}"
+        f"{regulation_documents:,} regulations + {accounting_documents:,} accounting + "
+        f"{case_documents:,} cases, sha256={digest}"
     )
     print(f"Manifest: {latest_path}")
 

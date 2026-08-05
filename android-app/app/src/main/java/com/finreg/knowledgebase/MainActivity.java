@@ -47,6 +47,9 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final String AUTHORITY = "com.finreg.knowledgebase.exports";
     private static final int TEAL = Color.rgb(0, 105, 92);
+    private static final int LIBRARY_REGULATIONS = 0;
+    private static final int LIBRARY_ACCOUNTING = 1;
+    private static final int LIBRARY_CASES = 2;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private WebView webView;
     private ProgressBar progress;
@@ -106,7 +109,7 @@ public final class MainActivity extends Activity {
         bar.addView(home);
 
         title = new TextView(this);
-        title.setText("金融监管知识库");
+        title.setText("金融与会计知识库");
         title.setTextColor(Color.WHITE);
         title.setTextSize(18);
         title.setMaxLines(1);
@@ -248,7 +251,7 @@ public final class MainActivity extends Activity {
 
     private void redirectLegacySearch(Uri uri) {
         String query = uri.getEncodedQuery();
-        String destination = homeUrl() + "?_home=" + System.currentTimeMillis();
+        String destination = buildHomeUrl(currentLibrary(), "_home");
         if (query != null && !query.isEmpty()) destination += "&" + query;
         clearHistoryAfterHomeLoad = true;
         webView.stopLoading();
@@ -268,8 +271,11 @@ public final class MainActivity extends Activity {
         actions.add("分享所选文字/当前条文");
         actions.add("导出条文为 TXT 文件");
         actions.add("打印或保存为 PDF");
-        actions.add(isCaseView() ? "返回案例检索首页" : "返回制度检索首页");
-        actions.add(isCaseView() ? "打开制度库" : "打开案例库");
+        actions.add("返回当前检索首页");
+        int currentLibrary = currentLibrary();
+        if (currentLibrary != LIBRARY_REGULATIONS) actions.add("打开金融监管制度库");
+        if (currentLibrary != LIBRARY_ACCOUNTING) actions.add("打开会计制度库");
+        if (currentLibrary != LIBRARY_CASES) actions.add("打开案例库");
         actions.add("立即检查知识库更新");
         if (updater.hasBackup()) actions.add("恢复上一版知识库");
         actions.add("关于联网同步版");
@@ -280,9 +286,10 @@ public final class MainActivity extends Activity {
             else if ("分享所选文字/当前条文".equals(selected)) shareCurrentText();
             else if ("导出条文为 TXT 文件".equals(selected)) exportCurrentText();
             else if ("打印或保存为 PDF".equals(selected)) printCurrentPage();
-            else if ("返回制度检索首页".equals(selected) || "返回案例检索首页".equals(selected)) returnToSearchHome();
-            else if ("打开制度库".equals(selected)) openLibraryHome(false);
-            else if ("打开案例库".equals(selected)) openLibraryHome(true);
+            else if ("返回当前检索首页".equals(selected)) returnToSearchHome();
+            else if ("打开金融监管制度库".equals(selected)) openLibraryHome(LIBRARY_REGULATIONS);
+            else if ("打开会计制度库".equals(selected)) openLibraryHome(LIBRARY_ACCOUNTING);
+            else if ("打开案例库".equals(selected)) openLibraryHome(LIBRARY_CASES);
             else if ("立即检查知识库更新".equals(selected)) checkForUpdates(true);
             else if ("恢复上一版知识库".equals(selected)) confirmRollback();
             else showAbout();
@@ -508,7 +515,9 @@ public final class MainActivity extends Activity {
                     dismissUpdateDialog();
                     loadSearchHome(true);
                     Toast.makeText(MainActivity.this,
-                            "知识库已启用 " + version + "（制度 " + documents + " 篇，案例 " + updater.getCaseDocuments() + " 条）",
+                            "知识库已启用 " + version + "（金融制度 " + updater.getRegulationDocuments() +
+                                    " 篇，会计制度 " + updater.getAccountingDocuments() +
+                                    " 篇，案例 " + updater.getCaseDocuments() + " 条）",
                             Toast.LENGTH_LONG).show();
                 });
             }
@@ -517,7 +526,9 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     dismissUpdateDialog();
                     if (wasManual) Toast.makeText(MainActivity.this,
-                            "已是最新知识库版本 " + version + "（制度 " + documents + " 篇，案例 " + updater.getCaseDocuments() + " 条）",
+                            "已是最新知识库版本 " + version + "（金融制度 " + updater.getRegulationDocuments() +
+                                    " 篇，会计制度 " + updater.getAccountingDocuments() +
+                                    " 篇，案例 " + updater.getCaseDocuments() + " 条）",
                             Toast.LENGTH_LONG).show();
                 });
             }
@@ -614,7 +625,7 @@ public final class MainActivity extends Activity {
         String html = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">" +
                 "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
                 "<body style=\"font-family:sans-serif;background:#f3f6f5;color:#173a35;padding:48px 24px\">" +
-                "<h2>正在准备金融监管知识库</h2><p>首次使用需要联网下载制度与案例数据；以后启动时会自动检查更新。</p>" +
+                "<h2>正在准备金融与会计知识库</h2><p>首次使用需要联网下载金融制度、会计制度与案例数据；以后会自动检查更新。</p>" +
                 "</body></html>";
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
@@ -624,14 +635,15 @@ public final class MainActivity extends Activity {
     }
 
     private void showAbout() {
-        new AlertDialog.Builder(this).setTitle("金融监管知识库 · 联网同步版")
+        new AlertDialog.Builder(this).setTitle("金融与会计知识库 · 联网同步版")
                 .setMessage("APP 版本：" + BuildConfig.VERSION_NAME + "\n" +
                         "制度版本：" + updater.getVersion() + "\n" +
-                        "制度数量：" + updater.getDocuments() + " 篇\n\n" +
+                        "金融监管制度：" + updater.getRegulationDocuments() + " 篇\n" +
+                        "会计制度：" + updater.getAccountingDocuments() + " 篇\n\n" +
                         "案例数量：" + updater.getCaseDocuments() + " 条\n" +
                         "案例来源：财政部、证监会、审计署、中央纪委国家监委\n\n" +
                         "启动时检查更新，并由 Android 在联网时每天后台检查一次。" +
-                        "制度库和案例库始终作为同一版本更新。下载包会校验文件大小和 SHA-256，" +
+                        "金融制度、会计制度和案例库始终作为同一版本更新。下载包会校验文件大小和 SHA-256，" +
                         "安装失败不会覆盖现有数据，并保留上一版本用于回滚。\n\n" +
                         "更新源：GitHub · " + RegulationUpdater.MANIFEST_URL)
                 .setPositiveButton("确定", null).show();
@@ -642,13 +654,9 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isHomeUrl(String url) {
-        String regulationHome = libraryHomeUrl(false);
-        String caseHome = libraryHomeUrl(true);
+        String regulationHome = libraryHomeUrl(LIBRARY_REGULATIONS);
+        String caseHome = libraryHomeUrl(LIBRARY_CASES);
         return url == null || matchesHome(url, regulationHome) || matchesHome(url, caseHome);
-    }
-
-    private String homeUrl() {
-        return libraryHomeUrl(isCaseView());
     }
 
     private boolean matchesHome(String url, String home) {
@@ -667,33 +675,68 @@ public final class MainActivity extends Activity {
                 || path.startsWith(root + "case-data" + File.separator);
     }
 
-    private String libraryHomeUrl(boolean cases) {
-        File home = cases ? new File(updater.getCurrentRoot(), "cases/index.html") : updater.getHomeFile();
+    private boolean isAccountingView() {
+        String url = webView == null ? null : webView.getUrl();
+        if (url == null) return false;
+        Uri uri = Uri.parse(url);
+        if (!"file".equalsIgnoreCase(uri.getScheme())) return false;
+        if ("accounting".equals(uri.getQueryParameter("collection"))) return true;
+        String path = Uri.decode(uri.getPath());
+        if (path == null) return false;
+        String root = updater.getCurrentRoot().getAbsolutePath() + File.separator;
+        return path.startsWith(root + "docs" + File.separator + "accounting" + File.separator);
+    }
+
+    private int currentLibrary() {
+        if (isCaseView()) return LIBRARY_CASES;
+        if (isAccountingView()) return LIBRARY_ACCOUNTING;
+        return LIBRARY_REGULATIONS;
+    }
+
+    private String libraryHomeUrl(int library) {
+        File home = library == LIBRARY_CASES
+                ? new File(updater.getCurrentRoot(), "cases/index.html")
+                : updater.getHomeFile();
         return Uri.fromFile(home).toString();
     }
 
-    private void openLibraryHome(boolean cases) {
-        File home = cases ? new File(updater.getCurrentRoot(), "cases/index.html") : updater.getHomeFile();
+    private String buildHomeUrl(int library, String marker) {
+        String url = libraryHomeUrl(library) + "?" + marker + "=" + System.currentTimeMillis();
+        if (library == LIBRARY_REGULATIONS) return url + "&collection=regulations";
+        if (library == LIBRARY_ACCOUNTING) return url + "&collection=accounting";
+        return url;
+    }
+
+    private void openLibraryHome(int library) {
+        File home = library == LIBRARY_CASES
+                ? new File(updater.getCurrentRoot(), "cases/index.html")
+                : updater.getHomeFile();
         if (!home.isFile()) {
-            Toast.makeText(this, "当前数据包尚未包含案例库，请立即检查更新", Toast.LENGTH_LONG).show();
+            String name = library == LIBRARY_CASES ? "案例库" : "制度库";
+            Toast.makeText(this, "当前数据包尚未包含" + name + "，请立即检查更新", Toast.LENGTH_LONG).show();
+            checkForUpdates(true);
+            return;
+        }
+        if (library == LIBRARY_ACCOUNTING && updater.getAccountingDocuments() <= 0) {
+            Toast.makeText(this, "当前版本尚未包含会计制度，请立即检查更新", Toast.LENGTH_LONG).show();
             checkForUpdates(true);
             return;
         }
         clearHistoryAfterHomeLoad = true;
         webView.stopLoading();
-        webView.loadUrl(Uri.fromFile(home).toString() + "?_home=" + System.currentTimeMillis());
+        webView.loadUrl(buildHomeUrl(library, "_home"));
     }
 
     private void loadSearchHome(boolean clearSearch) {
         if (webView == null) return;
         clearHistoryAfterHomeLoad = true;
         webView.stopLoading();
-        String marker = clearSearch ? "?_home=" : "?_restore=";
+        String marker = clearSearch ? "_home" : "_restore";
         if (!updater.hasCurrentPackage()) {
             showWaitingPage();
             return;
         }
-        webView.loadUrl(homeUrl() + marker + System.currentTimeMillis());
+        webView.loadUrl(buildHomeUrl(currentLibrary(), marker));
     }
 
     private void returnToSearchHome() {
@@ -702,8 +745,10 @@ public final class MainActivity extends Activity {
             loadSearchHome(true);
             return;
         }
+        String collection = currentLibrary() == LIBRARY_ACCOUNTING
+                ? "accounting" : currentLibrary() == LIBRARY_REGULATIONS ? "regulations" : "";
         String script = "(function(){if(typeof window.KB_RESET_SEARCH==='function'){" +
-                "window.KB_RESET_SEARCH();return true;}var c=document.getElementById('clearFilter');" +
+                "window.KB_RESET_SEARCH('" + collection + "');return true;}var c=document.getElementById('clearFilter');" +
                 "if(c){c.click();return true;}return false;})()";
         webView.evaluateJavascript(script, value -> {
             if (!"true".equals(value)) loadSearchHome(true);
