@@ -6,9 +6,9 @@
 
 - AVD：`FinReg_API35`
 - Android：15 / API 35 / Google APIs x86_64
-- APK：`FinReg-KnowledgeBase-Online-v1.7.1.apk`
+- APK：`FinReg-KnowledgeBase-Online-v1.7.2.apk`
 - 包名：`com.finreg.knowledgebase`
-- APP 版本：versionCode 10 / versionName 1.7.1
+- APP 版本：versionCode 11 / versionName 1.7.2
 - 最终数据版本：`20260805.5`
 - 更新来源：GitHub `main` 清单和公开 Release
 
@@ -32,6 +32,10 @@
 - 文件大小和 SHA-256 校验通过，临时目录安装和原子切换成功。
 - 从 `.4` 自动升级至 `.5` 成功，更新期间旧库继续可用；`.4` 保留为回滚备份。
 - 冷启动直接载入已同步数据，后台检查不阻塞首页。
+- v1.7.2 已注册 Android `JobScheduler` 持久化任务：间隔 24 小时、弹性窗口 6 小时、仅在网络可用时运行。
+- APP 在前台查询时强制触发后台任务，任务正确让位于启动检查，不切换正在使用的文件。
+- APP 退到后台后强制触发任务，公网检查完成并记录“制度库和案例库已是最新版本 20260805.5”。
+- 完整重启 Android 后，持久化任务、APP 版本、数据版本和上次后台检查结果均保留。
 
 ## 案例库功能回归
 
@@ -54,8 +58,8 @@
 - Gradle `assembleDebug`：通过。
 - Android Lint：0 个错误、1 个 targetSdk 兼容性提示。
 - APK Signature Scheme v2：验证通过。
-- APK 大小：43,380 字节。
-- APK SHA-256：`9862d529c10ece751a8af3cc7b76d9dc1787e8390263bf278d8eb08b02420734`。
+- APK 大小：46,964 字节。
+- APK SHA-256：`5d3f5b861cd3b4206b55b206ecd1db82c003052cc0bef2dc7edd9cffbaaf8437`。
 - 知识库包大小：52,415,374 字节。
 - 知识库包 SHA-256：`8490fa0d7c95434e2455bdc07531156aff1144c1736c7d9b689e24a667b63941`。
 - ZIP：9,686 项，0 个不安全路径，0 个超过 255 UTF-8 字节的路径组件。
@@ -63,4 +67,4 @@
 
 ## 结论
 
-v1.7.1 与数据版本 20260805.5 已完成真实公网首次同步、已有数据升级、四来源筛选、案例正文、系统返回状态恢复、Android 路径兼容和回滚备份测试，可以用于内部安装分享。
+v1.7.2 与数据版本 20260805.5 已完成真实公网首次同步、已有数据升级、每日联网后台任务、跨重启持久化、前后台并发保护、四来源筛选、案例正文、系统返回状态恢复、Android 路径兼容和回滚备份测试，可以用于内部安装分享。

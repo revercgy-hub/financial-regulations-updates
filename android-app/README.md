@@ -1,6 +1,6 @@
 # 金融监管知识库 Android 联网同步版
 
-原生 Android 查询 APP。APK 不内置大体积数据，首次启动时从 GitHub Release 下载制度和案例知识库，后续自动检查版本。
+原生 Android 查询 APP。APK 不内置大体积数据，首次启动时从 GitHub Release 下载制度和案例知识库，后续启动时检查更新，并由 Android 在联网时每天执行一次后台检查。
 
 ## 功能
 
@@ -9,6 +9,8 @@
 - APP 内切换制度库和案例库；案例支持机构、主体、处理类型、案由和通告阶段筛选。
 - 下载文件大小和 SHA-256 双重校验。
 - 临时目录解压、原子替换和上一版本回滚。
+- 制度库和案例库使用同一个版本包，自动更新时不会出现两库版本不一致。
+- 后台任务仅在 APP 不处于前台查询时切换数据；失败后保留现有版本并由系统重试。
 - 查看 Markdown 原文，支持分享、导出 TXT、打印或保存 PDF。
 
 ## 构建
@@ -17,7 +19,7 @@
 .\build-apk.ps1
 ```
 
-输出：`FinReg-KnowledgeBase-Online-v1.7.1.apk`
+输出：`FinReg-KnowledgeBase-Online-v1.7.2.apk`
 
 首次构建会把 JDK 17、Android SDK Platform 35、Build Tools 35.0.0 和 Gradle 8.9 下载到 `%LOCALAPPDATA%\FinRegAndroidBuild`。
 

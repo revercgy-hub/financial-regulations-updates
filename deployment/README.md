@@ -22,3 +22,5 @@ python .\deployment\build_regulations_package.py --version 20260805.2
 APP 固定从以下地址读取清单：
 
 `https://raw.githubusercontent.com/revercgy-hub/financial-regulations-updates/main/deployment/update/latest.json`
+
+APP 启动时检查该清单，Android 后台任务也会在联网时每天检查一次。制度和案例位于同一个带版本号的更新包中，经大小和 SHA-256 校验后一起切换，避免两库版本不一致。
