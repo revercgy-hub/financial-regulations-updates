@@ -67,6 +67,7 @@ public final class MainActivity extends Activity {
         KnowledgeUpdateScheduler.schedule(this);
         buildLayout();
         configureWebView();
+        webView.clearCache(true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             backCallback = Api33Back.register(this);
         }
@@ -513,6 +514,7 @@ public final class MainActivity extends Activity {
             @Override public void onReady(boolean installed, String version, int documents) {
                 runOnUiThread(() -> {
                     dismissUpdateDialog();
+                    webView.clearCache(true);
                     loadSearchHome(true);
                     Toast.makeText(MainActivity.this,
                             "知识库已启用 " + version + "（金融制度 " + updater.getRegulationDocuments() +
@@ -601,7 +603,7 @@ public final class MainActivity extends Activity {
             progressParams.topMargin = dp(18);
             layout.addView(updateProgress, progressParams);
             updateDialog = new AlertDialog.Builder(this)
-                    .setTitle("联网同步金融监管制度")
+                    .setTitle("联网同步金融与会计知识库")
                     .setView(layout)
                     .setCancelable(false)
                     .create();
