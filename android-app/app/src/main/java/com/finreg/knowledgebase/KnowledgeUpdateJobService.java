@@ -24,7 +24,7 @@ public final class KnowledgeUpdateJobService extends JobService {
         updater.check(false, () -> !KnowledgeUpdateScheduler.isAppForeground(),
                 new RegulationUpdater.Listener() {
                     @Override public void onChecking(boolean required) {
-                        recordResult("正在后台检查制度库和案例库", null);
+                        recordResult("正在后台检查金融制度、会计制度和案例库", null);
                     }
 
                     @Override public void onDownloadStarted(
@@ -40,13 +40,13 @@ public final class KnowledgeUpdateJobService extends JobService {
                     @Override public void onReady(
                             boolean installed, String version, int documents
                     ) {
-                        finish(run, false, "已自动更新制度库和案例库", version);
+                        finish(run, false, "已自动更新金融制度、会计制度和案例库", version);
                     }
 
                     @Override public void onNoUpdate(
                             String version, int documents, boolean manual
                     ) {
-                        finish(run, false, "制度库和案例库已是最新版本", version);
+                        finish(run, false, "金融制度、会计制度和案例库已是最新版本", version);
                     }
 
                     @Override public void onError(
