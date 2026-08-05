@@ -75,7 +75,9 @@ def copy_file(source: Path, destination: Path) -> None:
         shutil.copy2(source, destination)
 
 
-def build_homepage(source: Path, destination: Path, generated_at: str) -> None:
+def build_homepage(
+    source: Path, destination: Path, generated_at: str, version: str
+) -> None:
     html = (source / "index.html").read_text(encoding="utf-8")
     html = re.sub(
         r'\s*<article class="collection-card red".*?</article>',
@@ -109,7 +111,9 @@ def build_homepage(source: Path, destination: Path, generated_at: str) -> None:
         "<div class=\"offline-badge\"><span></span>离线可用</div>":
             "<div class=\"offline-badge\"><span></span>已联网同步</div>",
         '<script src="assets/search-index.js"></script>':
-            '<script src="assets/catalog.js"></script>',
+            f'<script src="assets/catalog.js?v={version}"></script>',
+        '<script src="assets/app.js"></script>':
+            f'<script src="assets/app.js?v={version}"></script>',
     }
     for old, new in replacements.items():
         if old not in html:
@@ -258,7 +262,7 @@ def main() -> None:
     package.mkdir(parents=True)
     DIST.mkdir(parents=True, exist_ok=True)
 
-    build_homepage(source, package / "index.html", generated_at)
+    build_homepage(source, package / "index.html", generated_at, args.version)
     copy_file(source / "assets" / "site.css", package / "assets" / "site.css")
     copy_file(APP_SCRIPT, package / "assets" / "app.js")
     stage_documents(source, package, records)
