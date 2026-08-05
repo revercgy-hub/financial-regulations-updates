@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import zipfile
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 MAX_FILES = 40_000
 MAX_EXPANDED_BYTES = 2 * 1024 * 1024 * 1024
+MAX_COMPONENT_BYTES = 240
 
 
 def unified_root() -> Path:
@@ -66,6 +68,25 @@ def selected_files() -> list[Path]:
     return unique
 
 
+def portable_archive_name(path: Path) -> str:
+    parts = []
+    for component in path.parts:
+        if len(component.encode("utf-8")) <= MAX_COMPONENT_BYTES:
+            parts.append(component)
+            continue
+        suffix = Path(component).suffix
+        digest = hashlib.sha256(component.encode("utf-8")).hexdigest()[:12]
+        ending = f"__{digest}{suffix}"
+        budget = MAX_COMPONENT_BYTES - len(ending.encode("utf-8"))
+        prefix = ""
+        for character in component[: -len(suffix)] if suffix else component:
+            if len((prefix + character).encode("utf-8")) > budget:
+                break
+            prefix += character
+        parts.append(prefix.rstrip(" ._") + ending)
+    return PurePosixPath(*parts).as_posix()
+
+
 def pack(destination: Path, version: str) -> None:
     files = selected_files()
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -79,8 +100,13 @@ def pack(destination: Path, version: str) -> None:
             "files": len(files),
         }
         archive.writestr("automation-state.json", json.dumps(state, ensure_ascii=False, indent=2))
+        archive_names = set()
         for path in files:
-            archive.write(path, path.relative_to(ROOT).as_posix())
+            archive_name = portable_archive_name(path.relative_to(ROOT))
+            if archive_name in archive_names:
+                raise RuntimeError(f"Portable state path collision: {archive_name}")
+            archive_names.add(archive_name)
+            archive.write(path, archive_name)
     print(json.dumps({**state, "archive": str(destination), "bytes": destination.stat().st_size}))
 
 
