@@ -1,5 +1,6 @@
 beautifulsoup4>=4.12,<5
 html2text>=2024.2.26
+lxml>=5,<7
 markdown>=3.5,<4
 pypdf>=4,<7
 requests>=2.31,<3
