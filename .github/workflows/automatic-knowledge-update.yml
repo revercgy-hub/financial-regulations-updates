@@ -1,0 +1,192 @@
+name: Automatic knowledge update
+
+on:
+  schedule:
+    # 04:20 Asia/Shanghai. GitHub cron is UTC and may start a little later under load.
+    - cron: "20 20 * * *"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Sources to refresh
+        required: true
+        default: cases
+        type: choice
+        options:
+          - cases
+          - all
+      force_release:
+        description: Publish even when fingerprints are unchanged
+        required: true
+        default: false
+        type: boolean
+      dry_run:
+        description: Build and validate without publishing
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: automatic-knowledge-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Check out current release configuration
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: deployment/requirements-automation.txt
+
+      - name: Install crawler and builder dependencies
+        run: python -m pip install -r deployment/requirements-automation.txt
+
+      - name: Resolve baseline and refresh scope
+        id: plan
+        shell: bash
+        run: |
+          base_version=$(python -c "import json; print(json.load(open('deployment/update/latest.json', encoding='utf-8'))['version'])")
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            scope="${{ inputs.scope }}"
+            force_release="${{ inputs.force_release }}"
+            dry_run="${{ inputs.dry_run }}"
+          else
+            weekday=$(TZ=Asia/Shanghai date +%u)
+            if [[ "$weekday" == "7" ]]; then scope="all"; else scope="cases"; fi
+            force_release="false"
+            dry_run="false"
+          fi
+          echo "base_version=$base_version" >> "$GITHUB_OUTPUT"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "force_release=$force_release" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+
+      - name: Download verified server state and current APK
+        shell: bash
+        run: |
+          mkdir -p automation-input
+          tag="knowledge-${{ steps.plan.outputs.base_version }}"
+          gh release download "$tag" --dir automation-input --pattern "knowledge-source-state-${{ steps.plan.outputs.base_version }}.zip"
+          gh release download "$tag" --dir automation-input --pattern "FinReg-KnowledgeBase-Online-*.apk"
+
+      - name: Restore server source state safely
+        run: >-
+          python deployment/automation_state.py unpack
+          --input "automation-input/knowledge-source-state-${{ steps.plan.outputs.base_version }}.zip"
+
+      - name: Record source fingerprints
+        shell: bash
+        run: python deployment/library_fingerprint.py > automation-before.json
+
+      - name: Refresh current case sources
+        shell: bash
+        run: |
+          if [[ "${{ steps.plan.outputs.scope }}" == "all" ]]; then
+            sources="mof,csrc,ccdi,audit"
+          else
+            sources="mof,csrc,ccdi"
+          fi
+          python deployment/refresh_cases.py --sources "$sources" --ccdi-pages 2 --ccdi-detail-limit 40
+
+      - name: Refresh financial and accounting sources
+        if: steps.plan.outputs.scope == 'all'
+        shell: bash
+        run: |
+          python crawl_iweicha_ffs.py --output iweicha_ffs_kb --resume --refresh-discovery --workers 8
+          python crawl_maodocs.py --output maodocs_kb --delay 0.05
+
+      - name: Compare source fingerprints
+        id: changes
+        shell: bash
+        run: |
+          python deployment/library_fingerprint.py > automation-after.json
+          python deployment/library_fingerprint.py --compare automation-before.json automation-after.json --github-output "$GITHUB_OUTPUT"
+
+      - name: Rebuild unified制度 source after制度 changes
+        if: >-
+          steps.plan.outputs.scope == 'all' &&
+          (steps.changes.outputs.regulations_changed == 'true' || steps.changes.outputs.accounting_changed == 'true')
+        shell: bash
+        run: |
+          python build_iweicha_ffs_site.py
+          python build_maodocs_site.py
+          python build_unified_offline_kb.py --skip-media --no-zip
+
+      - name: Allocate release version
+        id: version
+        if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
+        shell: bash
+        run: echo "value=$(python deployment/next_version.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and validate update package
+        if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          python deployment/build_regulations_package.py --version "$version"
+          python deployment/automation_state.py pack --version "$version" --output "deployment/dist/knowledge-source-state-$version.zip"
+          python -m zipfile -t "deployment/dist/knowledge-package-$version.zip"
+
+      - name: Publish Release before switching the public manifest
+        if: >-
+          (steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true') &&
+          steps.plan.outputs.dry_run != 'true'
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          apk=$(find automation-input -maxdepth 1 -name 'FinReg-KnowledgeBase-Online-*.apk' -print -quit)
+          gh release create "knowledge-$version" \
+            "deployment/dist/knowledge-package-$version.zip" \
+            "deployment/dist/knowledge-source-state-$version.zip" \
+            "$apk" \
+            --target "${{ github.sha }}" \
+            --title "Automatic knowledge update $version" \
+            --notes "Automated, source-validated update. Scope: ${{ steps.plan.outputs.scope }}. Financial, accounting and four-source case data remain version-locked in one package."
+
+      - name: Switch public manifest after Release is ready
+        if: >-
+          (steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true') &&
+          steps.plan.outputs.dry_run != 'true'
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          cp deployment/dist/latest.json deployment/update/latest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deployment/update/latest.json
+          git commit -m "Publish automatic knowledge update $version"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Write run summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Knowledge update"
+            echo "- Baseline: ${{ steps.plan.outputs.base_version }}"
+            echo "- Scope: ${{ steps.plan.outputs.scope }}"
+            echo "- Changed: ${{ steps.changes.outputs.changed || 'not evaluated' }}"
+            echo "- Cases changed: ${{ steps.changes.outputs.cases_changed || 'not evaluated' }}"
+            echo "- Financial制度 changed: ${{ steps.changes.outputs.regulations_changed || 'not evaluated' }}"
+            echo "- Accounting制度 changed: ${{ steps.changes.outputs.accounting_changed || 'not evaluated' }}"
+            echo "- Dry run: ${{ steps.plan.outputs.dry_run }}"
+            if [[ -n "${{ steps.version.outputs.value }}" ]]; then
+              echo "- Candidate version: ${{ steps.version.outputs.value }}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
