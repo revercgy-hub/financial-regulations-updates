@@ -1,5 +1,9 @@
 param(
-    [switch]$SkipToolDownload
+    [switch]$SkipToolDownload,
+    [ValidateSet('Online', 'Offline', 'Both')]
+    [string]$Edition = 'Online',
+    [string]$KnowledgeManifest = '',
+    [string]$KnowledgePackage = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,14 +89,57 @@ Push-Location $ProjectRoot
 try {
     # Large asset replacements can leave padding in an incremental APK. A clean package
     # keeps the distributable close to the actual compressed resource size.
-    & $Gradle --no-daemon clean assembleDebug
+    & $Gradle --no-daemon clean
+    if ($LASTEXITCODE -ne 0) { throw "APK build failed: $LASTEXITCODE" }
+
+    if ($Edition -in @('Offline', 'Both')) {
+        if (-not $KnowledgeManifest) {
+            $KnowledgeManifest = Join-Path (Split-Path $ProjectRoot) 'deployment\update\latest.json'
+        }
+        if (-not (Test-Path -LiteralPath $KnowledgeManifest)) {
+            throw "Knowledge manifest not found: $KnowledgeManifest"
+        }
+        $Manifest = [IO.File]::ReadAllText(
+            (Resolve-Path -LiteralPath $KnowledgeManifest).Path,
+            [Text.Encoding]::UTF8
+        ) | ConvertFrom-Json
+        if (-not $KnowledgePackage) {
+            $KnowledgePackage = Join-Path (Split-Path $ProjectRoot) "deployment\dist\knowledge-package-$($Manifest.version).zip"
+        }
+        if (-not (Test-Path -LiteralPath $KnowledgePackage)) {
+            throw "Knowledge package not found: $KnowledgePackage"
+        }
+        $ActualSize = (Get-Item -LiteralPath $KnowledgePackage).Length
+        $ActualHash = (Get-FileHash -LiteralPath $KnowledgePackage -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($ActualSize -ne [long]$Manifest.package_size -or $ActualHash -ne $Manifest.sha256) {
+            throw 'Knowledge package does not match the manifest size/SHA-256'
+        }
+        $GeneratedAssets = Join-Path $ProjectRoot 'app\build\generated\offlineAssets'
+        New-Item -ItemType Directory -Force $GeneratedAssets | Out-Null
+        Copy-Item -LiteralPath $KnowledgeManifest -Destination (Join-Path $GeneratedAssets 'offline-manifest.json') -Force
+        Copy-Item -LiteralPath $KnowledgePackage -Destination (Join-Path $GeneratedAssets 'knowledge-package.zip') -Force
+    }
+
+    $Tasks = @()
+    if ($Edition -in @('Online', 'Both')) { $Tasks += 'assembleOnlineDebug' }
+    if ($Edition -in @('Offline', 'Both')) { $Tasks += 'assembleOfflineDebug' }
+    & $Gradle --no-daemon @Tasks
     if ($LASTEXITCODE -ne 0) { throw "APK build failed: $LASTEXITCODE" }
 } finally {
     Pop-Location
 }
 
-$BuiltApk = Join-Path $ProjectRoot 'app\build\outputs\apk\debug\app-debug.apk'
-if (-not (Test-Path $BuiltApk)) { throw 'Build finished but APK was not found' }
-$OutputApk = Join-Path $ProjectRoot 'FinReg-KnowledgeBase-Online-v1.7.4.apk'
-Copy-Item -LiteralPath $BuiltApk -Destination $OutputApk -Force
-Write-Host "Build complete: $OutputApk"
+if ($Edition -in @('Online', 'Both')) {
+    $BuiltApk = Join-Path $ProjectRoot 'app\build\outputs\apk\online\debug\app-online-debug.apk'
+    if (-not (Test-Path $BuiltApk)) { throw 'Online APK was not found after the build' }
+    $OutputApk = Join-Path $ProjectRoot 'FinReg-KnowledgeBase-Online-v1.7.4.apk'
+    Copy-Item -LiteralPath $BuiltApk -Destination $OutputApk -Force
+    Write-Host "Build complete: $OutputApk"
+}
+if ($Edition -in @('Offline', 'Both')) {
+    $BuiltApk = Join-Path $ProjectRoot 'app\build\outputs\apk\offline\debug\app-offline-debug.apk'
+    if (-not (Test-Path $BuiltApk)) { throw 'Offline APK was not found after the build' }
+    $OutputApk = Join-Path $ProjectRoot "FinReg-KnowledgeBase-Offline-KB$($Manifest.version)-v1.7.4.apk"
+    Copy-Item -LiteralPath $BuiltApk -Destination $OutputApk -Force
+    Write-Host "Build complete: $OutputApk"
+}

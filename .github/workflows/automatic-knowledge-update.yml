@@ -133,6 +133,19 @@ jobs:
         shell: bash
         run: echo "value=$(python deployment/next_version.py)" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Java for the versioned offline APK
+        if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle for the versioned offline APK
+        if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Build and validate update package
         if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
         shell: bash
@@ -142,6 +155,25 @@ jobs:
           python deployment/automation_state.py pack --version "$version" --output "deployment/dist/knowledge-source-state-$version.zip"
           python -m zipfile -t "deployment/dist/knowledge-package-$version.zip"
 
+      - name: Build and validate versioned offline APK
+        if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          app_version=$(python -c "import re; print(re.search(r\"versionName '([^']+)'\", open('android-app/app/build.gradle', encoding='utf-8').read()).group(1))")
+          (cd android-app && gradle --no-daemon clean)
+          mkdir -p android-app/app/build/generated/offlineAssets
+          cp deployment/dist/latest.json android-app/app/build/generated/offlineAssets/offline-manifest.json
+          cp "deployment/dist/knowledge-package-$version.zip" android-app/app/build/generated/offlineAssets/knowledge-package.zip
+          (cd android-app && gradle --no-daemon assembleOfflineDebug)
+          offline_apk="deployment/dist/FinReg-KnowledgeBase-Offline-KB$version-v$app_version.apk"
+          cp android-app/app/build/outputs/apk/offline/debug/app-offline-debug.apk "$offline_apk"
+          python deployment/validate_offline_apk.py "$offline_apk" --expected-version "$version"
+          python deployment/finalize_offline_manifest.py \
+            --manifest deployment/dist/latest.json \
+            --apk "$offline_apk" \
+            --app-version "$app_version"
+
       - name: Publish Release before switching the public manifest
         if: >-
           (steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true') &&
@@ -150,13 +182,15 @@ jobs:
         run: |
           version="${{ steps.version.outputs.value }}"
           apk=$(find automation-input -maxdepth 1 -name 'FinReg-KnowledgeBase-Online-*.apk' -print -quit)
+          offline_apk=$(find deployment/dist -maxdepth 1 -name "FinReg-KnowledgeBase-Offline-KB$version-*.apk" -print -quit)
           gh release create "knowledge-$version" \
             "deployment/dist/knowledge-package-$version.zip" \
             "deployment/dist/knowledge-source-state-$version.zip" \
+            "$offline_apk" \
             "$apk" \
             --target "${{ github.sha }}" \
             --title "Automatic knowledge update $version" \
-            --notes "Automated, source-validated update. Scope: ${{ steps.plan.outputs.scope }}. Financial, accounting and four-source case data remain version-locked in one package."
+            --notes "Automated, source-validated update. Scope: ${{ steps.plan.outputs.scope }}. Includes a versioned, fully offline APK plus the online-sync APK. Financial, accounting and four-source case data remain version-locked in one package."
 
       - name: Switch public manifest after Release is ready
         if: >-

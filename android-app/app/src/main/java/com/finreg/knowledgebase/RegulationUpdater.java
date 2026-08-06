@@ -26,6 +26,8 @@ import java.util.zip.ZipInputStream;
 final class RegulationUpdater {
     static final String MANIFEST_URL =
             "https://raw.githubusercontent.com/revercgy-hub/financial-regulations-updates/main/deployment/update/latest.json";
+    private static final String OFFLINE_MANIFEST_ASSET = "offline-manifest.json";
+    private static final String OFFLINE_PACKAGE_ASSET = "knowledge-package.zip";
     private static final String PREFS = "regulation_updates";
     private static final String KEY_VERSION = "version";
     private static final String KEY_VERSION_CODE = "version_code";
@@ -189,6 +191,13 @@ final class RegulationUpdater {
     }
 
     private JSONObject fetchManifest() throws Exception {
+        if (BuildConfig.OFFLINE_BUILD) {
+            try (InputStream input = context.getAssets().open(OFFLINE_MANIFEST_ASSET);
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                copyLimited(input, output, MAX_MANIFEST_BYTES, null);
+                return new JSONObject(output.toString(StandardCharsets.UTF_8.name()));
+            }
+        }
         Exception lastError = null;
         for (int attempt = 1; attempt <= 4; attempt++) {
             URL url = new URL(MANIFEST_URL + "?t=" + System.currentTimeMillis());
@@ -226,6 +235,9 @@ final class RegulationUpdater {
     private File downloadPackage(
             JSONObject manifest, Listener listener, boolean required
     ) throws Exception {
+        if (BuildConfig.OFFLINE_BUILD) {
+            return copyBundledPackage(manifest, listener, required);
+        }
         if (!root.exists() && !root.mkdirs()) throw new IllegalStateException("无法建立制度存储目录");
         File archive = new File(context.getCacheDir(), "regulations-update.zip");
         long expected = manifest.getLong("package_size");
@@ -291,6 +303,45 @@ final class RegulationUpdater {
         return archive;
     }
 
+    private File copyBundledPackage(
+            JSONObject manifest, Listener listener, boolean required
+    ) throws Exception {
+        if (!root.exists() && !root.mkdirs()) throw new IllegalStateException("无法建立制度存储目录");
+        File archive = new File(context.getCacheDir(), "bundled-knowledge-package.zip");
+        long expected = manifest.getLong("package_size");
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = new BufferedInputStream(
+                    context.getAssets().open(OFFLINE_PACKAGE_ASSET));
+             FileOutputStream file = new FileOutputStream(archive);
+             BufferedOutputStream output = new BufferedOutputStream(file)) {
+            byte[] buffer = new byte[128 * 1024];
+            long total = 0;
+            int read;
+            int lastPercent = -1;
+            while ((read = input.read(buffer)) >= 0) {
+                total += read;
+                if (total > MAX_PACKAGE_BYTES || total > expected + 1024) {
+                    throw new IllegalStateException("内置知识库大小超过版本清单声明");
+                }
+                output.write(buffer, 0, read);
+                digest.update(buffer, 0, read);
+                int percent = (int) Math.min(100, total * 100L / expected);
+                if (percent != lastPercent) {
+                    lastPercent = percent;
+                    listener.onProgress("正在读取内置知识库…", percent, required);
+                }
+            }
+            output.flush();
+            if (total != expected) throw new IllegalStateException("内置知识库大小与版本清单不一致");
+        }
+        String actual = hex(digest.digest());
+        if (!actual.equalsIgnoreCase(manifest.getString("sha256"))) {
+            if (archive.exists() && !archive.delete()) archive.deleteOnExit();
+            throw new IllegalStateException("内置知识库 SHA-256 校验失败");
+        }
+        return archive;
+    }
+
     private void installPackage(
             File archive, JSONObject manifest, Listener listener, boolean required,
             BooleanSupplier installAllowed
@@ -317,6 +368,8 @@ final class RegulationUpdater {
                     || installed.optInt("case_documents", 0) != manifest.optInt("case_documents", 0)) {
                 throw new IllegalStateException("更新包内容与清单不一致");
             }
+
+            if (BuildConfig.OFFLINE_BUILD) applyOfflineBranding(staging);
 
             ensureInstallAllowed(installAllowed);
             deleteTree(backup);
@@ -380,6 +433,38 @@ final class RegulationUpdater {
                 }
                 input.closeEntry();
             }
+        }
+    }
+
+    private void applyOfflineBranding(File staging) throws Exception {
+        File homepage = new File(staging, "index.html");
+        String html;
+        try (FileInputStream input = new FileInputStream(homepage);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            copyLimited(input, output, 4L * 1024L * 1024L, null);
+            html = output.toString(StandardCharsets.UTF_8.name());
+        }
+        String[][] replacements = {
+                {"FINANCIAL, ACCOUNTING & CASES · ONLINE SYNC",
+                        "FINANCIAL, ACCOUNTING & CASES · FULLY OFFLINE"},
+                {"金融监管制度、会计制度与财政、证监、审计、纪检监察案例，联网同步更新。",
+                        "金融监管制度、会计制度与财政、证监、审计、纪检监察案例，完整内置，无需联网。"},
+                {"<div class=\"offline-badge\"><span></span>已联网同步</div>",
+                        "<div class=\"offline-badge\"><span></span>完整离线</div>"},
+                {"<strong>3</strong><span>套在线知识库</span>",
+                        "<strong>3</strong><span>套离线知识库</span>"},
+                {"<strong>联网同步版</strong>", "<strong>完整离线版</strong>"},
+                {"<p>本地内容由 APP 从 GitHub 安全下载并校验；金融监管制度、会计制度和案例库随同一版本自动更新。</p>",
+                        "<p>金融监管制度、会计制度和四来源案例完整内置于 APK；查询、阅读、分享和导出均无需联网。</p>"},
+        };
+        for (String[] replacement : replacements) {
+            if (!html.contains(replacement[0])) {
+                throw new IllegalStateException("离线版首页标记缺失，拒绝使用错误版本的数据包");
+            }
+            html = html.replace(replacement[0], replacement[1]);
+        }
+        try (FileOutputStream output = new FileOutputStream(homepage)) {
+            output.write(html.getBytes(StandardCharsets.UTF_8));
         }
     }
 

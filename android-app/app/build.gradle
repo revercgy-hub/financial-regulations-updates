@@ -12,6 +12,22 @@ android {
         targetSdk 35
         versionCode 13
         versionName '1.7.4'
+        manifestPlaceholders = [appLabel: '金融会计与案例库']
+    }
+
+    flavorDimensions += 'connectivity'
+    productFlavors {
+        online {
+            dimension 'connectivity'
+            buildConfigField 'boolean', 'OFFLINE_BUILD', 'false'
+        }
+        offline {
+            dimension 'connectivity'
+            applicationIdSuffix '.offline'
+            versionNameSuffix '-offline'
+            manifestPlaceholders = [appLabel: '金融会计与案例库（离线版）']
+            buildConfigField 'boolean', 'OFFLINE_BUILD', 'true'
+        }
     }
 
     buildTypes {
@@ -22,6 +38,14 @@ android {
 
     packaging {
         jniLibs.useLegacyPackaging = false
+    }
+
+    androidResources {
+        noCompress += ['zip']
+    }
+
+    sourceSets {
+        offline.assets.srcDir layout.buildDirectory.dir('generated/offlineAssets')
     }
 
     buildFeatures {
