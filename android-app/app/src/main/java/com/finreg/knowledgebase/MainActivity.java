@@ -45,7 +45,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
-    private static final String AUTHORITY = "com.finreg.knowledgebase.exports";
+    private static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".exports";
     private static final int TEAL = Color.rgb(0, 105, 92);
     private static final int LIBRARY_REGULATIONS = 0;
     private static final int LIBRARY_ACCOUNTING = 1;
@@ -277,9 +277,9 @@ public final class MainActivity extends Activity {
         if (currentLibrary != LIBRARY_REGULATIONS) actions.add("打开金融监管制度库");
         if (currentLibrary != LIBRARY_ACCOUNTING) actions.add("打开会计制度库");
         if (currentLibrary != LIBRARY_CASES) actions.add("打开案例库");
-        actions.add("立即检查知识库更新");
+        actions.add(BuildConfig.OFFLINE_BUILD ? "检查内置知识库版本" : "立即检查知识库更新");
         if (updater.hasBackup()) actions.add("恢复上一版知识库");
-        actions.add("关于联网同步版");
+        actions.add(BuildConfig.OFFLINE_BUILD ? "关于完整离线版" : "关于联网同步版");
         String[] items = actions.toArray(new String[0]);
         new AlertDialog.Builder(this).setTitle("导出与更多").setItems(items, (d, which) -> {
             String selected = items[which];
@@ -291,7 +291,8 @@ public final class MainActivity extends Activity {
             else if ("打开金融监管制度库".equals(selected)) openLibraryHome(LIBRARY_REGULATIONS);
             else if ("打开会计制度库".equals(selected)) openLibraryHome(LIBRARY_ACCOUNTING);
             else if ("打开案例库".equals(selected)) openLibraryHome(LIBRARY_CASES);
-            else if ("立即检查知识库更新".equals(selected)) checkForUpdates(true);
+            else if ("立即检查知识库更新".equals(selected)
+                    || "检查内置知识库版本".equals(selected)) checkForUpdates(true);
             else if ("恢复上一版知识库".equals(selected)) confirmRollback();
             else showAbout();
         }).show();
@@ -498,13 +499,17 @@ public final class MainActivity extends Activity {
         updater.check(manual, new RegulationUpdater.Listener() {
             @Override public void onChecking(boolean required) {
                 runOnUiThread(() -> {
-                    if (required || manual) showUpdateDialog("正在检查知识库版本…", 0, true);
+                    if (required || manual) showUpdateDialog(
+                            BuildConfig.OFFLINE_BUILD ? "正在检查内置知识库版本…" : "正在检查知识库版本…",
+                            0, true);
                 });
             }
 
             @Override public void onDownloadStarted(String version, long bytes, boolean required) {
-                runOnUiThread(() -> showUpdateDialog(
-                        "发现知识库版本 " + version + "，正在下载 " + formatSize(bytes) + "…", 0, true));
+                runOnUiThread(() -> showUpdateDialog(BuildConfig.OFFLINE_BUILD
+                        ? "正在安装内置知识库 " + version + "（" + formatSize(bytes) + "）…"
+                        : "发现知识库版本 " + version + "，正在下载 " + formatSize(bytes) + "…",
+                        0, true));
             }
 
             @Override public void onProgress(String message, int percent, boolean required) {
@@ -546,8 +551,10 @@ public final class MainActivity extends Activity {
                     }
                     showWaitingPage();
                     new AlertDialog.Builder(MainActivity.this)
-                            .setTitle("知识库同步失败")
-                            .setMessage(message + "\n\n首次使用必须联网下载知识库，请检查网络后重试。")
+                            .setTitle(BuildConfig.OFFLINE_BUILD ? "内置知识库安装失败" : "知识库同步失败")
+                            .setMessage(message + (BuildConfig.OFFLINE_BUILD
+                                    ? "\n\n请确认手机有足够存储空间后重试。"
+                                    : "\n\n首次使用必须联网下载知识库，请检查网络后重试。"))
                             .setCancelable(false)
                             .setPositiveButton("重试", (dialog, which) -> checkForUpdates(true))
                             .setNegativeButton("退出", (dialog, which) -> finish())
@@ -624,10 +631,13 @@ public final class MainActivity extends Activity {
     }
 
     private void showWaitingPage() {
+        String message = BuildConfig.OFFLINE_BUILD
+                ? "首次使用正在从 APK 安装内置知识库，全程无需联网。"
+                : "首次使用需要联网下载金融制度、会计制度与案例数据；以后会自动检查更新。";
         String html = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">" +
                 "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
                 "<body style=\"font-family:sans-serif;background:#f3f6f5;color:#173a35;padding:48px 24px\">" +
-                "<h2>正在准备金融会计与案例库</h2><p>首次使用需要联网下载金融制度、会计制度与案例数据；以后会自动检查更新。</p>" +
+                "<h2>正在准备金融会计与案例库</h2><p>" + message + "</p>" +
                 "</body></html>";
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
@@ -637,17 +647,18 @@ public final class MainActivity extends Activity {
     }
 
     private void showAbout() {
-        new AlertDialog.Builder(this).setTitle("金融会计与案例库 · 联网同步版")
+        String edition = BuildConfig.OFFLINE_BUILD ? "完整离线版" : "联网同步版";
+        String updateDescription = BuildConfig.OFFLINE_BUILD
+                ? "知识库完整内置于 APK，查询和阅读无需联网。知识库版本与 APK 文件名对应；如需新版，请安装服务器发布的新离线 APK。"
+                : "启动时检查更新，并由 Android 在联网时每天后台检查一次。金融制度、会计制度和案例库始终作为同一版本更新。下载包会校验文件大小和 SHA-256，安装失败不会覆盖现有数据，并保留上一版本用于回滚。\n\n更新源：GitHub · " + RegulationUpdater.MANIFEST_URL;
+        new AlertDialog.Builder(this).setTitle("金融会计与案例库 · " + edition)
                 .setMessage("APP 版本：" + BuildConfig.VERSION_NAME + "\n" +
                         "制度版本：" + updater.getVersion() + "\n" +
                         "金融监管制度：" + updater.getRegulationDocuments() + " 篇\n" +
                         "会计制度：" + updater.getAccountingDocuments() + " 篇\n\n" +
                         "案例数量：" + updater.getCaseDocuments() + " 条\n" +
                         "案例来源：财政部、证监会、审计署、中央纪委国家监委\n\n" +
-                        "启动时检查更新，并由 Android 在联网时每天后台检查一次。" +
-                        "金融制度、会计制度和案例库始终作为同一版本更新。下载包会校验文件大小和 SHA-256，" +
-                        "安装失败不会覆盖现有数据，并保留上一版本用于回滚。\n\n" +
-                        "更新源：GitHub · " + RegulationUpdater.MANIFEST_URL)
+                        updateDescription)
                 .setPositiveButton("确定", null).show();
     }
 

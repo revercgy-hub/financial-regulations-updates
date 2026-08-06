@@ -1,6 +1,8 @@
-# 金融、会计与案例知识库 Android 联网同步版
+# 金融、会计与案例知识库 Android 版
 
 原生 Android 查询 APP。APK 不内置大体积数据，首次启动时从 GitHub Release 下载金融监管制度、会计制度和案例知识库，后续启动时检查更新，并由 Android 在联网时每天执行一次后台检查。
+
+同一工程还可生成完整离线版：金融监管制度、会计制度和四来源案例全部内置在 APK 中，不申请网络权限，文件名包含知识库版本，并可与联网同步版同时安装。
 
 ## 功能
 
@@ -21,6 +23,14 @@
 ```
 
 输出：`FinReg-KnowledgeBase-Online-v1.7.4.apk`
+
+构建当前清单对应的完整离线版：
+
+```powershell
+.\build-apk.ps1 -Edition Offline
+```
+
+输出示例：`FinReg-KnowledgeBase-Offline-KB20260805.9-v1.7.4.apk`
 
 首次构建会把 JDK 17、Android SDK Platform 35、Build Tools 35.0.0 和 Gradle 8.9 下载到 `%LOCALAPPDATA%\FinRegAndroidBuild`。
 

@@ -1,5 +1,6 @@
 package com.finreg.knowledgebase;
 
+import android.annotation.SuppressLint;
 import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
 import android.content.ComponentName;
@@ -20,7 +21,9 @@ final class KnowledgeUpdateScheduler {
 
     private KnowledgeUpdateScheduler() {}
 
+    @SuppressLint("MissingPermission") // Offline builds return before the persisted online job is created.
     static void schedule(Context context) {
+        if (BuildConfig.OFFLINE_BUILD) return;
         Context appContext = context.getApplicationContext();
         JobScheduler scheduler = appContext.getSystemService(JobScheduler.class);
         if (scheduler == null) return;
