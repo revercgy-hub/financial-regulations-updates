@@ -20,7 +20,7 @@ CASE_KB = PROJECT / "penalty_cases_kb"
 CASE_SITE = PROJECT / "penalty_cases_site"
 REPOSITORY = "revercgy-hub/financial-regulations-updates"
 SCOPE = "regulations"
-APP_VERSION = "1.7.4"
+APP_VERSION = "1.8.0"
 MINIMUM_DOCUMENTS = {
     "regulations": 2021,
     "accounting": 1291,

@@ -132,14 +132,14 @@ try {
 if ($Edition -in @('Online', 'Both')) {
     $BuiltApk = Join-Path $ProjectRoot 'app\build\outputs\apk\online\debug\app-online-debug.apk'
     if (-not (Test-Path $BuiltApk)) { throw 'Online APK was not found after the build' }
-    $OutputApk = Join-Path $ProjectRoot 'FinReg-KnowledgeBase-Online-v1.7.4.apk'
+    $OutputApk = Join-Path $ProjectRoot 'FinReg-KnowledgeBase-Online-v1.8.0.apk'
     Copy-Item -LiteralPath $BuiltApk -Destination $OutputApk -Force
     Write-Host "Build complete: $OutputApk"
 }
 if ($Edition -in @('Offline', 'Both')) {
     $BuiltApk = Join-Path $ProjectRoot 'app\build\outputs\apk\offline\debug\app-offline-debug.apk'
     if (-not (Test-Path $BuiltApk)) { throw 'Offline APK was not found after the build' }
-    $OutputApk = Join-Path $ProjectRoot "FinReg-KnowledgeBase-Offline-KB$($Manifest.version)-v1.7.4.apk"
+    $OutputApk = Join-Path $ProjectRoot "FinReg-KnowledgeBase-Offline-KB$($Manifest.version)-v1.8.0.apk"
     Copy-Item -LiteralPath $BuiltApk -Destination $OutputApk -Force
     Write-Host "Build complete: $OutputApk"
 }

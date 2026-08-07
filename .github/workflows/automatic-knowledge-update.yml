@@ -76,13 +76,13 @@ jobs:
           echo "force_release=$force_release" >> "$GITHUB_OUTPUT"
           echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
 
-      - name: Download verified server state and current APK
+      - name: Download verified server state and baseline package
         shell: bash
         run: |
           mkdir -p automation-input
           tag="knowledge-${{ steps.plan.outputs.base_version }}"
           gh release download "$tag" --dir automation-input --pattern "knowledge-source-state-${{ steps.plan.outputs.base_version }}.zip"
-          gh release download "$tag" --dir automation-input --pattern "FinReg-KnowledgeBase-Online-*.apk"
+          gh release download "$tag" --dir automation-input --pattern "knowledge-package-${{ steps.plan.outputs.base_version }}.zip"
 
       - name: Restore server source state safely
         run: >-
@@ -133,14 +133,14 @@ jobs:
         shell: bash
         run: echo "value=$(python deployment/next_version.py)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Java for the versioned offline APK
+      - name: Set up Java for Android APKs
         if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle for the versioned offline APK
+      - name: Set up Gradle for Android APKs
         if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -154,6 +154,27 @@ jobs:
           python deployment/build_regulations_package.py --version "$version"
           python deployment/automation_state.py pack --version "$version" --output "deployment/dist/knowledge-source-state-$version.zip"
           python -m zipfile -t "deployment/dist/knowledge-package-$version.zip"
+
+      - name: Build and validate incremental update
+        if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          base_version="${{ steps.plan.outputs.base_version }}"
+          python deployment/build_incremental_package.py \
+            --base-package "automation-input/knowledge-package-$base_version.zip" \
+            --target-package "deployment/dist/knowledge-package-$version.zip" \
+            --manifest deployment/dist/latest.json
+          python -m zipfile -t "deployment/dist/knowledge-delta-$base_version-to-$version.zip"
+
+      - name: Build online APK with incremental updater
+        if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
+        shell: bash
+        run: |
+          app_version=$(python -c "import re; print(re.search(r\"versionName '([^']+)'\", open('android-app/app/build.gradle', encoding='utf-8').read()).group(1))")
+          (cd android-app && gradle --no-daemon clean assembleOnlineDebug)
+          cp android-app/app/build/outputs/apk/online/debug/app-online-debug.apk \
+            "deployment/dist/FinReg-KnowledgeBase-Online-v$app_version.apk"
 
       - name: Build and validate versioned offline APK
         if: steps.changes.outputs.changed == 'true' || steps.plan.outputs.force_release == 'true'
@@ -181,16 +202,17 @@ jobs:
         shell: bash
         run: |
           version="${{ steps.version.outputs.value }}"
-          apk=$(find automation-input -maxdepth 1 -name 'FinReg-KnowledgeBase-Online-*.apk' -print -quit)
+          apk=$(find deployment/dist -maxdepth 1 -name 'FinReg-KnowledgeBase-Online-*.apk' -print -quit)
           offline_apk=$(find deployment/dist -maxdepth 1 -name "FinReg-KnowledgeBase-Offline-KB$version-*.apk" -print -quit)
           gh release create "knowledge-$version" \
             "deployment/dist/knowledge-package-$version.zip" \
+            "deployment/dist/knowledge-delta-${{ steps.plan.outputs.base_version }}-to-$version.zip" \
             "deployment/dist/knowledge-source-state-$version.zip" \
             "$offline_apk" \
             "$apk" \
             --target "${{ github.sha }}" \
             --title "Automatic knowledge update $version" \
-            --notes "Automated, source-validated update. Scope: ${{ steps.plan.outputs.scope }}. Includes a versioned, fully offline APK plus the online-sync APK. Financial, accounting and four-source case data remain version-locked in one package."
+            --notes "Automated, source-validated incremental update. Scope: ${{ steps.plan.outputs.scope }}. Online clients receive only changed files and fall back to the full package if needed. Includes a versioned, fully offline APK plus the online-sync APK."
 
       - name: Switch public manifest after Release is ready
         if: >-
@@ -222,5 +244,9 @@ jobs:
             echo "- Dry run: ${{ steps.plan.outputs.dry_run }}"
             if [[ -n "${{ steps.version.outputs.value }}" ]]; then
               echo "- Candidate version: ${{ steps.version.outputs.value }}"
+              delta=$(find deployment/dist -maxdepth 1 -name 'knowledge-delta-*.zip' -print -quit)
+              if [[ -n "$delta" ]]; then
+                echo "- Incremental asset: $(basename "$delta") ($(du -h "$delta" | cut -f1))"
+              fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
