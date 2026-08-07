@@ -12,6 +12,7 @@ on:
         default: cases
         type: choice
         options:
+          - current
           - cases
           - all
       force_release:
@@ -94,6 +95,7 @@ jobs:
         run: python deployment/library_fingerprint.py > automation-before.json
 
       - name: Refresh current case sources
+        if: steps.plan.outputs.scope != 'current'
         shell: bash
         run: |
           if [[ "${{ steps.plan.outputs.scope }}" == "all" ]]; then
