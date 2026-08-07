@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - current
+          - accounting
           - cases
           - all
       force_release:
@@ -95,7 +96,7 @@ jobs:
         run: python deployment/library_fingerprint.py > automation-before.json
 
       - name: Refresh current case sources
-        if: steps.plan.outputs.scope != 'current'
+        if: steps.plan.outputs.scope == 'cases' || steps.plan.outputs.scope == 'all'
         shell: bash
         run: |
           if [[ "${{ steps.plan.outputs.scope }}" == "all" ]]; then
@@ -112,7 +113,7 @@ jobs:
             --ccdi-detail-limit 40
 
       - name: Rebuild case site from verified current state
-        if: steps.plan.outputs.scope == 'current'
+        if: steps.plan.outputs.scope == 'current' || steps.plan.outputs.scope == 'accounting'
         run: python build_penalty_cases.py --site-only
 
       - name: Refresh financial and accounting sources
@@ -122,6 +123,21 @@ jobs:
           python crawl_iweicha_ffs.py --output iweicha_ffs_kb --resume --refresh-discovery --workers 8
           python crawl_maodocs.py --output maodocs_kb --delay 0.05
 
+      - name: Refresh official MOF Accounting Department source
+        if: steps.plan.outputs.scope == 'accounting' || steps.plan.outputs.scope == 'cases' || steps.plan.outputs.scope == 'all'
+        shell: bash
+        run: |
+          if [[ "${{ steps.plan.outputs.scope }}" == "all" ]]; then
+            pages=3
+            max_new=12
+          else
+            pages=1
+            max_new=5
+          fi
+          python deployment/refresh_mof_accounting.py \
+            --pages "$pages" \
+            --max-new-per-channel "$max_new"
+
       - name: Compare source fingerprints
         id: changes
         shell: bash
@@ -129,15 +145,22 @@ jobs:
           python deployment/library_fingerprint.py > automation-after.json
           python deployment/library_fingerprint.py --compare automation-before.json automation-after.json --github-output "$GITHUB_OUTPUT"
 
+      - name: Rebuild financial site after financial changes
+        if: steps.changes.outputs.regulations_changed == 'true'
+        shell: bash
+        run: python build_iweicha_ffs_site.py
+
+      - name: Rebuild accounting site after accounting changes
+        if: steps.changes.outputs.accounting_changed == 'true'
+        shell: bash
+        run: python build_maodocs_site.py
+
       - name: Rebuild unified制度 source after制度 changes
         if: >-
-          steps.plan.outputs.scope == 'all' &&
-          (steps.changes.outputs.regulations_changed == 'true' || steps.changes.outputs.accounting_changed == 'true')
+          steps.changes.outputs.regulations_changed == 'true' ||
+          steps.changes.outputs.accounting_changed == 'true'
         shell: bash
-        run: |
-          python build_iweicha_ffs_site.py
-          python build_maodocs_site.py
-          python build_unified_offline_kb.py --skip-media --no-zip
+        run: python build_unified_offline_kb.py --skip-media --no-zip
 
       - name: Allocate release version
         id: version

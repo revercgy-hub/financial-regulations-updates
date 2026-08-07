@@ -46,7 +46,7 @@ def selected_files() -> list[Path]:
         ),
         (
             ROOT / "maodocs_kb",
-            ("index.jsonl", "manifest.json", "sitemap.xml"),
+            ("index.jsonl", "manifest.json", "sitemap.xml", "mof_accounting_index.jsonl"),
             ("markdown",),
         ),
     ):

@@ -139,7 +139,7 @@ def record_agency(collection_id: str, record: dict, category: str) -> str:
         return clean_text(record.get("agency") or category)
     if collection_id == "penalties":
         return clean_text(record.get("agency") or record.get("source") or category)
-    return category
+    return clean_text(record.get("agency") or category)
 
 
 def record_tags(collection_id: str, record: dict) -> list[str]:
