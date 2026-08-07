@@ -145,13 +145,17 @@ jobs:
           python deployment/library_fingerprint.py > automation-after.json
           python deployment/library_fingerprint.py --compare automation-before.json automation-after.json --github-output "$GITHUB_OUTPUT"
 
-      - name: Rebuild financial site after financial changes
-        if: steps.changes.outputs.regulations_changed == 'true'
+      - name: Rebuild financial site before unified制度 build
+        if: >-
+          steps.changes.outputs.regulations_changed == 'true' ||
+          steps.changes.outputs.accounting_changed == 'true'
         shell: bash
         run: python build_iweicha_ffs_site.py
 
-      - name: Rebuild accounting site after accounting changes
-        if: steps.changes.outputs.accounting_changed == 'true'
+      - name: Rebuild accounting site before unified制度 build
+        if: >-
+          steps.changes.outputs.regulations_changed == 'true' ||
+          steps.changes.outputs.accounting_changed == 'true'
         shell: bash
         run: python build_maodocs_site.py
 
