@@ -111,6 +111,10 @@ jobs:
             --ccdi-pages 2 \
             --ccdi-detail-limit 40
 
+      - name: Rebuild case site from verified current state
+        if: steps.plan.outputs.scope == 'current'
+        run: python build_penalty_cases.py --site-only
+
       - name: Refresh financial and accounting sources
         if: steps.plan.outputs.scope == 'all'
         shell: bash
