@@ -9,6 +9,7 @@ CCDI/NSC records are refreshed from their current official endpoints.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
 import time
 from collections import Counter
@@ -21,15 +22,36 @@ import build_penalty_cases as cases
 LIVE_SOURCES = {"财政部", "证监会", cases.CCDI_SOURCE}
 
 
+def stable_case_id(record: dict) -> str:
+    identity = "\n".join(
+        str(record.get(key, ""))
+        for key in ("source", "url", "title", "publish_date", "file_no", "sha256")
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return f"{record['source']}-{digest}"
+
+
 def refresh_mof(session, old_records: list[dict]) -> list[dict]:
     discovered = cases.parse_mof_list(session)
     old_by_url = {item.get("url"): item for item in old_records if item.get("url")}
     refreshed = []
+    reused = 0
+    fetched = 0
     for index, record in enumerate(discovered, start=1):
+        cached = old_by_url.get(record.get("url"))
+        unchanged = cached and cached.get("body") and all(
+            cases.clean_text(str(cached.get(key, "")))
+            == cases.clean_text(str(record.get(key, "")))
+            for key in ("title", "file_no", "publish_date")
+        )
+        if unchanged:
+            refreshed.append(cached)
+            reused += 1
+            continue
         try:
             refreshed.append(cases.parse_mof_case(session, record))
+            fetched += 1
         except Exception as error:
-            cached = old_by_url.get(record.get("url"))
             if cached:
                 refreshed.append(cached)
                 print(f"MOF {index}/{len(discovered)}: kept cached copy ({error})")
@@ -38,6 +60,7 @@ def refresh_mof(session, old_records: list[dict]) -> list[dict]:
         if index % 25 == 0:
             print(f"MOF {index}/{len(discovered)}")
         time.sleep(0.08)
+    print(f"MOF incremental refresh: reused {reused}, fetched {fetched}")
     return refreshed
 
 
@@ -104,6 +127,9 @@ def main() -> None:
         )
         require_healthy(cases.CCDI_SOURCE, ccdi_records, by_source.get(cases.CCDI_SOURCE, []), 0.90)
 
+    existing_by_url = {
+        record.get("url"): record for record in existing if record.get("url")
+    }
     combined = []
     seen = set()
     for raw in mof_records + csrc_records + audit_records + ccdi_records:
@@ -111,6 +137,17 @@ def main() -> None:
         if not key or key in seen:
             continue
         seen.add(key)
+        raw = dict(raw)
+        previous = existing_by_url.get(raw.get("url"))
+        if previous:
+            raw["case_id"] = previous["case_id"]
+            if raw.get("source") == cases.CCDI_SOURCE and (
+                not raw.get("body") or raw.get("body") == raw.get("title")
+            ):
+                raw["body"] = previous.get("body", raw.get("body", ""))
+                raw["raw_html"] = previous.get("raw_html", raw.get("raw_html", ""))
+        else:
+            raw["case_id"] = stable_case_id(raw)
         combined.append(cases.enrich_case(raw, len(combined) + 1))
     combined.sort(
         key=lambda item: (item.get("publish_date", ""), item.get("source", ""), item.get("file_no", "")),

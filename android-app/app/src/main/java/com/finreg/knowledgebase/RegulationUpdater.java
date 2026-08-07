@@ -2,7 +2,9 @@ package com.finreg.knowledgebase;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.system.Os;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
@@ -37,6 +39,7 @@ final class RegulationUpdater {
     private static final String KEY_CASE_DOCUMENTS = "case_documents";
     private static final long MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final long MAX_PACKAGE_BYTES = 512L * 1024L * 1024L;
+    private static final long MAX_DELTA_BYTES = 384L * 1024L * 1024L;
     private static final long MAX_EXTRACTED_BYTES = 768L * 1024L * 1024L;
     private static final int MAX_ZIP_ENTRIES = 20_000;
     private static final AtomicBoolean UPDATE_RUNNING = new AtomicBoolean(false);
@@ -130,13 +133,27 @@ final class RegulationUpdater {
                     return;
                 }
                 ensureInstallAllowed(installAllowed);
-                long packageSize = manifest.getLong("package_size");
-                listener.onDownloadStarted(version, packageSize, required);
-                File archive = downloadPackage(manifest, listener, required);
-                try {
-                    installPackage(archive, manifest, listener, required, installAllowed);
-                } finally {
-                    if (archive.exists() && !archive.delete()) archive.deleteOnExit();
+                if (canUseDelta(manifest)) {
+                    try {
+                        JSONObject delta = manifest.getJSONObject("delta");
+                        listener.onDownloadStarted(version, delta.getLong("size"), required);
+                        File archive = downloadDelta(delta, listener, required);
+                        try {
+                            installDelta(archive, manifest, delta, listener, required, installAllowed);
+                        } finally {
+                            if (archive.exists() && !archive.delete()) archive.deleteOnExit();
+                        }
+                    } catch (Exception deltaError) {
+                        ensureInstallAllowed(installAllowed);
+                        listener.onProgress(
+                                "增量更新未完成，正在自动改用完整更新包…", 0, required);
+                        listener.onDownloadStarted(
+                                version, manifest.getLong("package_size"), required);
+                        installFullDownload(manifest, listener, required, installAllowed);
+                    }
+                } else {
+                    listener.onDownloadStarted(version, manifest.getLong("package_size"), required);
+                    installFullDownload(manifest, listener, required, installAllowed);
                 }
                 listener.onReady(true, version, documents);
             } catch (Exception error) {
@@ -230,6 +247,49 @@ final class RegulationUpdater {
         if (!"https".equalsIgnoreCase(packageUrl.getProtocol())) {
             throw new IllegalArgumentException("更新包必须使用 HTTPS");
         }
+        JSONObject delta = manifest.optJSONObject("delta");
+        if (delta != null) {
+            if (delta.getInt("schema") != 1) {
+                throw new IllegalArgumentException("不支持的增量更新格式");
+            }
+            if (delta.getLong("base_version_code") <= 0
+                    || delta.getLong("base_version_code") >= manifest.getLong("version_code")) {
+                throw new IllegalArgumentException("增量更新版本范围异常");
+            }
+            long deltaSize = delta.getLong("size");
+            if (deltaSize <= 0 || deltaSize > MAX_DELTA_BYTES) {
+                throw new IllegalArgumentException("增量更新包大小异常");
+            }
+            String deltaHash = delta.getString("sha256").toLowerCase(Locale.ROOT);
+            if (!deltaHash.matches("[0-9a-f]{64}")) {
+                throw new IllegalArgumentException("增量更新包校验值异常");
+            }
+            URL deltaUrl = new URL(delta.getString("url"));
+            if (!"https".equalsIgnoreCase(deltaUrl.getProtocol())) {
+                throw new IllegalArgumentException("增量更新包必须使用 HTTPS");
+            }
+        }
+    }
+
+    private boolean canUseDelta(JSONObject manifest) throws Exception {
+        if (BuildConfig.OFFLINE_BUILD || !hasCurrentPackage()) return false;
+        JSONObject delta = manifest.optJSONObject("delta");
+        if (delta == null || delta.getLong("base_version_code") != getVersionCode()) return false;
+        JSONObject installed = readJson(new File(current, "package.json"), 1024 * 1024);
+        return installed.getLong("version_code") == delta.getLong("base_version_code")
+                && installed.getString("version").equals(delta.getString("base_version"));
+    }
+
+    private void installFullDownload(
+            JSONObject manifest, Listener listener, boolean required,
+            BooleanSupplier installAllowed
+    ) throws Exception {
+        File archive = downloadPackage(manifest, listener, required);
+        try {
+            installPackage(archive, manifest, listener, required, installAllowed);
+        } finally {
+            if (archive.exists() && !archive.delete()) archive.deleteOnExit();
+        }
     }
 
     private File downloadPackage(
@@ -238,13 +298,31 @@ final class RegulationUpdater {
         if (BuildConfig.OFFLINE_BUILD) {
             return copyBundledPackage(manifest, listener, required);
         }
+        return downloadRemoteArchive(
+                new URL(manifest.getString("package_url")),
+                manifest.getLong("package_size"), manifest.getString("sha256"),
+                "regulations-update.zip", MAX_PACKAGE_BYTES,
+                "正在下载完整知识库…", listener, required);
+    }
+
+    private File downloadDelta(
+            JSONObject delta, Listener listener, boolean required
+    ) throws Exception {
+        return downloadRemoteArchive(
+                new URL(delta.getString("url")), delta.getLong("size"),
+                delta.getString("sha256"), "regulations-delta.zip", MAX_DELTA_BYTES,
+                "正在下载新增和变更内容…", listener, required);
+    }
+
+    private File downloadRemoteArchive(
+            URL packageUrl, long expected, String expectedHash, String cacheName,
+            long maximum, String progressMessage, Listener listener, boolean required
+    ) throws Exception {
         if (!root.exists() && !root.mkdirs()) throw new IllegalStateException("无法建立制度存储目录");
-        File archive = new File(context.getCacheDir(), "regulations-update.zip");
-        long expected = manifest.getLong("package_size");
+        File archive = new File(context.getCacheDir(), cacheName);
         if (archive.length() > expected && !archive.delete()) {
             throw new IllegalStateException("无法清理异常的下载缓存");
         }
-        URL packageUrl = new URL(manifest.getString("package_url"));
         Exception lastError = null;
         for (int attempt = 1; attempt <= 4 && archive.length() < expected; attempt++) {
             long offset = archive.length();
@@ -257,14 +335,14 @@ final class RegulationUpdater {
                 int lastPercent = -1;
                 while ((read = input.read(buffer)) >= 0) {
                     total += read;
-                    if (total > MAX_PACKAGE_BYTES || total > expected + 1024) {
+                    if (total > maximum || total > expected + 1024) {
                         throw new IllegalStateException("下载文件大小超过清单声明");
                     }
                     output.write(buffer, 0, read);
                     int percent = (int) Math.min(100, total * 100L / expected);
                     if (percent != lastPercent) {
                         lastPercent = percent;
-                        listener.onProgress("正在下载知识库更新…", percent, required);
+                        listener.onProgress(progressMessage, percent, required);
                     }
                 }
                 output.flush();
@@ -297,8 +375,9 @@ final class RegulationUpdater {
                 }
         }
         String actual = hex(digest.digest());
-        if (!actual.equalsIgnoreCase(manifest.getString("sha256"))) {
-            throw new IllegalStateException("制度更新包 SHA-256 校验失败");
+        if (!actual.equalsIgnoreCase(expectedHash)) {
+            if (archive.exists() && !archive.delete()) archive.deleteOnExit();
+            throw new IllegalStateException("知识库更新包 SHA-256 校验失败");
         }
         return archive;
     }
@@ -352,42 +431,125 @@ final class RegulationUpdater {
         try {
             listener.onProgress("正在安全解压知识库…", 100, required);
             extractZip(archive, staging);
-            File packageJson = new File(staging, "package.json");
-            File index = new File(staging, "index.html");
-            if (!packageJson.isFile() || !index.isFile()) {
-                throw new IllegalStateException("更新包缺少必要文件");
-            }
-            JSONObject installed = readJson(packageJson, 1024 * 1024);
-            if (!"regulations".equals(installed.getString("scope"))
-                    || installed.getLong("version_code") != manifest.getLong("version_code")
-                    || installed.getInt("documents") != manifest.getInt("documents")
-                    || installed.optInt("regulation_documents", installed.getInt("documents"))
-                        != manifest.optInt("regulation_documents", manifest.getInt("documents"))
-                    || installed.optInt("accounting_documents", 0)
-                        != manifest.optInt("accounting_documents", 0)
-                    || installed.optInt("case_documents", 0) != manifest.optInt("case_documents", 0)) {
-                throw new IllegalStateException("更新包内容与清单不一致");
-            }
+            JSONObject installed = validateInstalledPackage(staging, manifest);
 
             if (BuildConfig.OFFLINE_BUILD) applyOfflineBranding(staging);
-
-            ensureInstallAllowed(installAllowed);
-            deleteTree(backup);
-            ensureInstallAllowed(installAllowed);
-            boolean movedCurrent = false;
-            if (current.exists()) {
-                if (!current.renameTo(backup)) throw new IllegalStateException("无法备份当前制度库");
-                movedCurrent = true;
-            }
-            if (!staging.renameTo(current)) {
-                if (movedCurrent) backup.renameTo(current);
-                throw new IllegalStateException("无法启用新制度库");
-            }
-            saveInstalled(installed);
+            activateStaging(staging, installed, installAllowed);
         } catch (Exception error) {
             deleteTree(staging);
             throw error;
         }
+    }
+
+    private void installDelta(
+            File archive, JSONObject manifest, JSONObject publicDelta, Listener listener,
+            boolean required, BooleanSupplier installAllowed
+    ) throws Exception {
+        long stamp = System.currentTimeMillis();
+        File extracted = new File(root, "delta-extracted-" + stamp);
+        File staging = new File(root, "staging-" + stamp);
+        deleteTree(extracted);
+        deleteTree(staging);
+        if (!extracted.mkdirs() || !staging.mkdirs()) {
+            throw new IllegalStateException("无法建立增量更新临时目录");
+        }
+        try {
+            listener.onProgress("正在校验增量更新…", 100, required);
+            extractZip(archive, extracted);
+            JSONObject delta = readJson(new File(extracted, "delta.json"), 16L * 1024L * 1024L);
+            validateDeltaMetadata(delta, publicDelta, manifest);
+            JSONObject installedBefore = readJson(new File(current, "package.json"), 1024 * 1024);
+            if (installedBefore.getLong("version_code") != delta.getLong("base_version_code")
+                    || !installedBefore.getString("version").equals(delta.getString("base_version"))) {
+                throw new IllegalStateException("本地知识库版本与增量包起点不一致");
+            }
+
+            listener.onProgress("正在合并新增和变更内容…", 100, required);
+            cloneTree(current, staging);
+            JSONArray deletions = delta.getJSONArray("delete");
+            if (deletions.length() > MAX_ZIP_ENTRIES) {
+                throw new IllegalStateException("增量删除文件数量异常");
+            }
+            for (int index = 0; index < deletions.length(); index++) {
+                deleteTree(safeChild(staging, deletions.getString(index)));
+            }
+            JSONArray files = delta.getJSONArray("files");
+            if (files.length() > MAX_ZIP_ENTRIES) {
+                throw new IllegalStateException("增量更新文件数量异常");
+            }
+            File payload = new File(extracted, "payload");
+            for (int index = 0; index < files.length(); index++) {
+                JSONObject file = files.getJSONObject(index);
+                String path = file.getString("path");
+                File source = safeChild(payload, path);
+                File destination = safeChild(staging, path);
+                if (!source.isFile() || source.length() != file.getLong("size")
+                        || !hashFile(source).equalsIgnoreCase(file.getString("sha256"))) {
+                    throw new IllegalStateException("增量文件校验失败：" + path);
+                }
+                deleteTree(destination);
+                File parent = destination.getParentFile();
+                if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                    throw new IllegalStateException("无法建立增量更新目录");
+                }
+                if (!source.renameTo(destination)) copyFile(source, destination);
+            }
+            JSONObject installed = validateInstalledPackage(staging, manifest);
+            activateStaging(staging, installed, installAllowed);
+        } finally {
+            deleteTree(extracted);
+            deleteTree(staging);
+        }
+    }
+
+    private void validateDeltaMetadata(
+            JSONObject delta, JSONObject publicDelta, JSONObject manifest
+    ) throws Exception {
+        if (delta.getInt("schema") != 1 || !"regulations".equals(delta.getString("scope"))
+                || delta.getLong("base_version_code") != publicDelta.getLong("base_version_code")
+                || !delta.getString("base_version").equals(publicDelta.getString("base_version"))
+                || delta.getLong("target_version_code") != manifest.getLong("version_code")
+                || !delta.getString("target_version").equals(manifest.getString("version"))) {
+            throw new IllegalStateException("增量包版本信息与更新清单不一致");
+        }
+    }
+
+    private JSONObject validateInstalledPackage(File packageRoot, JSONObject manifest) throws Exception {
+        File packageJson = new File(packageRoot, "package.json");
+        File index = new File(packageRoot, "index.html");
+        if (!packageJson.isFile() || !index.isFile()) {
+            throw new IllegalStateException("更新包缺少必要文件");
+        }
+        JSONObject installed = readJson(packageJson, 1024 * 1024);
+        if (!"regulations".equals(installed.getString("scope"))
+                || installed.getLong("version_code") != manifest.getLong("version_code")
+                || installed.getInt("documents") != manifest.getInt("documents")
+                || installed.optInt("regulation_documents", installed.getInt("documents"))
+                    != manifest.optInt("regulation_documents", manifest.getInt("documents"))
+                || installed.optInt("accounting_documents", 0)
+                    != manifest.optInt("accounting_documents", 0)
+                || installed.optInt("case_documents", 0) != manifest.optInt("case_documents", 0)) {
+            throw new IllegalStateException("更新包内容与清单不一致");
+        }
+        return installed;
+    }
+
+    private void activateStaging(
+            File staging, JSONObject installed, BooleanSupplier installAllowed
+    ) throws Exception {
+        ensureInstallAllowed(installAllowed);
+        deleteTree(backup);
+        ensureInstallAllowed(installAllowed);
+        boolean movedCurrent = false;
+        if (current.exists()) {
+            if (!current.renameTo(backup)) throw new IllegalStateException("无法备份当前制度库");
+            movedCurrent = true;
+        }
+        if (!staging.renameTo(current)) {
+            if (movedCurrent) backup.renameTo(current);
+            throw new IllegalStateException("无法启用新制度库");
+        }
+        saveInstalled(installed);
     }
 
     private static void ensureInstallAllowed(BooleanSupplier installAllowed) {
@@ -504,6 +666,68 @@ final class RegulationUpdater {
             return new ConnectionInputStream(connection);
         }
         throw new IllegalStateException("更新下载重定向次数过多");
+    }
+
+    private static File safeChild(File parent, String relative) throws Exception {
+        if (relative == null || relative.isEmpty() || relative.startsWith("/")
+                || relative.startsWith("\\") || relative.contains("\\")) {
+            throw new IllegalStateException("增量包包含不安全路径");
+        }
+        String[] parts = relative.split("/", -1);
+        for (String part : parts) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) {
+                throw new IllegalStateException("增量包包含不安全路径");
+            }
+        }
+        String parentPath = parent.getCanonicalPath() + File.separator;
+        File child = new File(parent, relative);
+        if (!child.getCanonicalPath().startsWith(parentPath)) {
+            throw new IllegalStateException("增量包包含越界路径");
+        }
+        return child;
+    }
+
+    private static void cloneTree(File source, File destination) throws Exception {
+        if (source.isDirectory()) {
+            if (!destination.isDirectory() && !destination.mkdirs()) {
+                throw new IllegalStateException("无法建立增量更新目录");
+            }
+            File[] children = source.listFiles();
+            if (children == null) throw new IllegalStateException("无法读取当前知识库");
+            for (File child : children) {
+                cloneTree(child, new File(destination, child.getName()));
+            }
+            return;
+        }
+        File parent = destination.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            throw new IllegalStateException("无法建立增量更新目录");
+        }
+        try {
+            Os.link(source.getAbsolutePath(), destination.getAbsolutePath());
+        } catch (Exception ignored) {
+            copyFile(source, destination);
+        }
+    }
+
+    private static void copyFile(File source, File destination) throws Exception {
+        try (InputStream input = new BufferedInputStream(new FileInputStream(source));
+             FileOutputStream file = new FileOutputStream(destination);
+             BufferedOutputStream output = new BufferedOutputStream(file)) {
+            byte[] buffer = new byte[128 * 1024];
+            int read;
+            while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+        }
+    }
+
+    private static String hashFile(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[128 * 1024];
+            int read;
+            while ((read = input.read(buffer)) >= 0) digest.update(buffer, 0, read);
+        }
+        return hex(digest.digest());
     }
 
     private void saveInstalled(JSONObject installed) throws Exception {
