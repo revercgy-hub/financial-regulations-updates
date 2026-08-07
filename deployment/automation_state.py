@@ -110,6 +110,39 @@ def pack(destination: Path, version: str) -> None:
     print(json.dumps({**state, "archive": str(destination), "bytes": destination.stat().st_size}))
 
 
+def repair_portable_index_paths(destination: Path) -> None:
+    """Point restored indexes at filenames shortened for portable ZIP extraction."""
+    repaired = 0
+    for directory_name in ("penalty_cases_kb", "iweicha_ffs_kb", "maodocs_kb"):
+        directory = destination / directory_name
+        index_path = directory / "index.jsonl"
+        if not index_path.is_file():
+            continue
+        records = [
+            json.loads(line)
+            for line in index_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        changed = False
+        for record in records:
+            for key in ("markdown_path", "raw_html_path"):
+                value = record.get(key)
+                if not value:
+                    continue
+                portable = portable_archive_name(PurePosixPath(str(value)))
+                if portable == value or not (directory / portable).is_file():
+                    continue
+                record[key] = portable
+                changed = True
+                repaired += 1
+        if changed:
+            with index_path.open("w", encoding="utf-8", newline="\n") as output:
+                for record in records:
+                    output.write(json.dumps(record, ensure_ascii=False) + "\n")
+    if repaired:
+        print(f"Repaired {repaired} portable source index paths")
+
+
 def unpack(source: Path, destination: Path) -> None:
     with zipfile.ZipFile(source) as archive:
         entries = archive.infolist()
@@ -124,6 +157,7 @@ def unpack(source: Path, destination: Path) -> None:
                 raise RuntimeError(f"Unsafe state path: {item.filename}")
         destination.mkdir(parents=True, exist_ok=True)
         archive.extractall(destination)
+    repair_portable_index_paths(destination)
     marker = destination / "automation-state.json"
     if not marker.is_file():
         raise RuntimeError("State archive is missing automation-state.json")
