@@ -98,10 +98,16 @@ jobs:
         run: |
           if [[ "${{ steps.plan.outputs.scope }}" == "all" ]]; then
             sources="mof,csrc,ccdi,audit"
+            csrc_recent=0
           else
             sources="mof,csrc,ccdi"
+            csrc_recent=250
           fi
-          python deployment/refresh_cases.py --sources "$sources" --ccdi-pages 2 --ccdi-detail-limit 40
+          python deployment/refresh_cases.py \
+            --sources "$sources" \
+            --csrc-recent "$csrc_recent" \
+            --ccdi-pages 2 \
+            --ccdi-detail-limit 40
 
       - name: Refresh financial and accounting sources
         if: steps.plan.outputs.scope == 'all'

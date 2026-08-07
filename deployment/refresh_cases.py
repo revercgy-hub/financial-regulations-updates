@@ -64,6 +64,59 @@ def refresh_mof(session, old_records: list[dict]) -> list[dict]:
     return refreshed
 
 
+def refresh_csrc(session, old_records: list[dict], recent_limit: int) -> list[dict]:
+    if recent_limit <= 0:
+        refreshed = cases.parse_csrc_list(session)
+        print(f"CSRC full verification: fetched {len(refreshed)} records")
+        return refreshed
+    recent = cases.parse_csrc_list(session, limit=recent_limit)
+    recent_urls = {record.get("url") for record in recent if record.get("url")}
+    historical = [
+        record for record in old_records if record.get("url") not in recent_urls
+    ]
+    print(
+        f"CSRC incremental refresh: checked {len(recent)} recent records, "
+        f"reused {len(historical)} historical records"
+    )
+    return recent + historical
+
+
+def refresh_ccdi(
+    old_records: list[dict], pages_per_channel: int, detail_limit: int
+) -> list[dict]:
+    discovered = cases.parse_ccdi_cases(
+        limit=None,
+        pages_per_channel=pages_per_channel,
+        detail_limit=0,
+    )
+    old_by_url = {
+        record.get("url"): record for record in old_records if record.get("url")
+    }
+    reused = 0
+    fetched = 0
+    for record in discovered:
+        previous = old_by_url.get(record.get("url"))
+        if previous:
+            record["body"] = previous.get("body", record.get("body", ""))
+            record["raw_html"] = previous.get("raw_html", record.get("raw_html", ""))
+            reused += 1
+            continue
+        if fetched >= detail_limit:
+            continue
+        try:
+            source = cases.request_ccdi_text(record["url"])
+            body = cases.ccdi_article_text(source)
+            if body:
+                record["body"] = body
+                record["raw_html"] = source
+            fetched += 1
+        except Exception as error:
+            print(f"CCDI new detail fetch failed: {record['url']} ({error})")
+        time.sleep(1.0)
+    print(f"CCDI incremental refresh: reused {reused}, fetched {fetched} new details")
+    return discovered
+
+
 def require_healthy(source: str, current: list[dict], previous: list[dict], floor: float) -> None:
     old_count = len(previous)
     new_count = len(current)
@@ -84,6 +137,12 @@ def main() -> None:
     )
     parser.add_argument("--ccdi-pages", type=int, default=2)
     parser.add_argument("--ccdi-detail-limit", type=int, default=40)
+    parser.add_argument(
+        "--csrc-recent",
+        type=int,
+        default=250,
+        help="number of newest CSRC records to verify; use 0 for a full verification",
+    )
     args = parser.parse_args()
     requested = {item.strip().lower() for item in args.sources.split(",") if item.strip()}
     unknown = requested - {"mof", "csrc", "ccdi", "audit"}
@@ -114,14 +173,14 @@ def main() -> None:
     csrc_records = by_source.get("证监会", [])
     if "csrc" in requested:
         print("Refreshing CSRC cases...")
-        csrc_records = cases.parse_csrc_list(session)
+        csrc_records = refresh_csrc(session, csrc_records, args.csrc_recent)
         require_healthy("证监会", csrc_records, by_source.get("证监会", []), 0.95)
 
     ccdi_records = by_source.get(cases.CCDI_SOURCE, [])
     if "ccdi" in requested:
         print("Refreshing CCDI/NSC notices...")
-        ccdi_records = cases.parse_ccdi_cases(
-            limit=None,
+        ccdi_records = refresh_ccdi(
+            ccdi_records,
             pages_per_channel=args.ccdi_pages,
             detail_limit=args.ccdi_detail_limit,
         )
