@@ -36,6 +36,7 @@ final class RegulationUpdater {
     private static final String KEY_DOCUMENTS = "documents";
     private static final String KEY_REGULATION_DOCUMENTS = "regulation_documents";
     private static final String KEY_ACCOUNTING_DOCUMENTS = "accounting_documents";
+    private static final String KEY_FISCAL_DOCUMENTS = "fiscal_documents";
     private static final String KEY_CASE_DOCUMENTS = "case_documents";
     private static final long MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final long MAX_PACKAGE_BYTES = 512L * 1024L * 1024L;
@@ -104,6 +105,10 @@ final class RegulationUpdater {
 
     int getAccountingDocuments() {
         return preferences.getInt(KEY_ACCOUNTING_DOCUMENTS, 0);
+    }
+
+    int getFiscalDocuments() {
+        return preferences.getInt(KEY_FISCAL_DOCUMENTS, 0);
     }
 
     long getVersionCode() {
@@ -528,6 +533,8 @@ final class RegulationUpdater {
                     != manifest.optInt("regulation_documents", manifest.getInt("documents"))
                 || installed.optInt("accounting_documents", 0)
                     != manifest.optInt("accounting_documents", 0)
+                || installed.optInt("fiscal_documents", 0)
+                    != manifest.optInt("fiscal_documents", 0)
                 || installed.optInt("case_documents", 0) != manifest.optInt("case_documents", 0)) {
             throw new IllegalStateException("更新包内容与清单不一致");
         }
@@ -607,17 +614,17 @@ final class RegulationUpdater {
             html = output.toString(StandardCharsets.UTF_8.name());
         }
         String[][] replacements = {
-                {"FINANCIAL, ACCOUNTING & CASES · ONLINE SYNC",
-                        "FINANCIAL, ACCOUNTING & CASES · FULLY OFFLINE"},
-                {"金融监管制度、会计制度与财政、证监、审计、纪检监察案例，联网同步更新。",
-                        "金融监管制度、会计制度与财政、证监、审计、纪检监察案例，完整内置，无需联网。"},
+                {"FINANCIAL, FISCAL, ACCOUNTING & CASES · ONLINE SYNC",
+                        "FINANCIAL, FISCAL, ACCOUNTING & CASES · FULLY OFFLINE"},
+                {"金融监管制度、财政监管制度、会计制度与财政、证监、审计、纪检监察案例，联网同步更新。",
+                        "金融监管制度、财政监管制度、会计制度与财政、证监、审计、纪检监察案例，完整内置，无需联网。"},
                 {"<div class=\"offline-badge\"><span></span>已联网同步</div>",
                         "<div class=\"offline-badge\"><span></span>完整离线</div>"},
-                {"<strong>3</strong><span>套在线知识库</span>",
-                        "<strong>3</strong><span>套离线知识库</span>"},
+                {"<strong>4</strong><span>套在线知识库</span>",
+                        "<strong>4</strong><span>套离线知识库</span>"},
                 {"<strong>联网同步版</strong>", "<strong>完整离线版</strong>"},
-                {"<p>本地内容由 APP 从 GitHub 安全下载并校验；金融监管制度、会计制度和案例库随同一版本自动更新。</p>",
-                        "<p>金融监管制度、会计制度和四来源案例完整内置于 APK；查询、阅读、分享和导出均无需联网。</p>"},
+                {"<p>本地内容由 APP 从 GitHub 安全下载并校验；金融监管、财政监管、会计制度和案例库随同一版本自动更新。</p>",
+                        "<p>金融监管、财政监管、会计制度和四来源案例完整内置于 APK；查询、阅读、分享和导出均无需联网。</p>"},
         };
         for (String[] replacement : replacements) {
             if (!html.contains(replacement[0])) {
@@ -738,6 +745,7 @@ final class RegulationUpdater {
                 .putInt(KEY_REGULATION_DOCUMENTS,
                         installed.optInt("regulation_documents", installed.getInt("documents")))
                 .putInt(KEY_ACCOUNTING_DOCUMENTS, installed.optInt("accounting_documents", 0))
+                .putInt(KEY_FISCAL_DOCUMENTS, installed.optInt("fiscal_documents", 0))
                 .putInt(KEY_CASE_DOCUMENTS, installed.optInt("case_documents", 0))
                 .apply();
     }

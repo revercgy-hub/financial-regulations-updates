@@ -20,6 +20,10 @@ LIBRARIES = {
         ROOT / "maodocs_kb" / "index.jsonl",
         ("url", "sha256", "title", "lastmod"),
     ),
+    "fiscal": (
+        ROOT / "fiscal_kb" / "index.jsonl",
+        ("topic", "url", "sha256", "title", "publish_date", "file_no"),
+    ),
 }
 
 
@@ -42,7 +46,7 @@ def snapshot() -> dict[str, dict[str, object]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fingerprint the three server-side source libraries.")
+    parser = argparse.ArgumentParser(description="Fingerprint the four server-side source libraries.")
     parser.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"))
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()

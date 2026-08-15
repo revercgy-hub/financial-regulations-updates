@@ -49,6 +49,11 @@ def selected_files() -> list[Path]:
             ("index.jsonl", "manifest.json", "sitemap.xml", "mof_accounting_index.jsonl"),
             ("markdown",),
         ),
+        (
+            ROOT / "fiscal_kb",
+            ("index.jsonl", "manifest.json"),
+            ("markdown", "raw_html"),
+        ),
     ):
         files.extend(directory / name for name in fixed if (directory / name).is_file())
         for name in recursive:
@@ -87,8 +92,28 @@ def portable_archive_name(path: Path) -> str:
     return PurePosixPath(*parts).as_posix()
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def pack(destination: Path, version: str) -> None:
     files = selected_files()
+    archive_entries: dict[str, Path] = {}
+    for path in files:
+        archive_name = portable_archive_name(path.relative_to(ROOT))
+        existing = archive_entries.get(archive_name)
+        if existing is None:
+            archive_entries[archive_name] = path
+            continue
+        if existing.stat().st_size != path.stat().st_size or file_sha256(existing) != file_sha256(path):
+            raise RuntimeError(
+                f"Portable state path collision with different content: {archive_name}"
+            )
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(
         destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9, allowZip64=True
@@ -97,15 +122,10 @@ def pack(destination: Path, version: str) -> None:
             "schema": 1,
             "version": version,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "files": len(files),
+            "files": len(archive_entries),
         }
         archive.writestr("automation-state.json", json.dumps(state, ensure_ascii=False, indent=2))
-        archive_names = set()
-        for path in files:
-            archive_name = portable_archive_name(path.relative_to(ROOT))
-            if archive_name in archive_names:
-                raise RuntimeError(f"Portable state path collision: {archive_name}")
-            archive_names.add(archive_name)
+        for archive_name, path in archive_entries.items():
             archive.write(path, archive_name)
     print(json.dumps({**state, "archive": str(destination), "bytes": destination.stat().st_size}))
 
@@ -113,7 +133,7 @@ def pack(destination: Path, version: str) -> None:
 def repair_portable_index_paths(destination: Path) -> None:
     """Point restored indexes at filenames shortened for portable ZIP extraction."""
     repaired = 0
-    for directory_name in ("penalty_cases_kb", "iweicha_ffs_kb", "maodocs_kb"):
+    for directory_name in ("penalty_cases_kb", "iweicha_ffs_kb", "maodocs_kb", "fiscal_kb"):
         directory = destination / directory_name
         index_path = directory / "index.jsonl"
         if not index_path.is_file():

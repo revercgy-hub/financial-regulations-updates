@@ -66,6 +66,7 @@ def main() -> None:
             "documents",
             "regulation_documents",
             "accounting_documents",
+            "fiscal_documents",
             "case_documents",
         ):
             if package_manifest.get(key) != manifest.get(key):
@@ -80,6 +81,7 @@ def main() -> None:
                 "package_sha256": actual_hash,
                 "regulations": manifest["regulation_documents"],
                 "accounting": manifest["accounting_documents"],
+                "fiscal": manifest["fiscal_documents"],
                 "cases": manifest["case_documents"],
             },
             ensure_ascii=False,
