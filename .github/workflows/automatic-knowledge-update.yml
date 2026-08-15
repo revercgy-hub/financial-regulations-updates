@@ -14,6 +14,7 @@ on:
         options:
           - current
           - accounting
+          - fiscal
           - cases
           - all
       force_release:
@@ -113,7 +114,7 @@ jobs:
             --ccdi-detail-limit 40
 
       - name: Rebuild case site from verified current state
-        if: steps.plan.outputs.scope == 'current' || steps.plan.outputs.scope == 'accounting'
+        if: steps.plan.outputs.scope == 'current' || steps.plan.outputs.scope == 'accounting' || steps.plan.outputs.scope == 'fiscal'
         run: python build_penalty_cases.py --site-only
 
       - name: Refresh financial and accounting sources
@@ -138,6 +139,22 @@ jobs:
             --pages "$pages" \
             --max-new-per-channel "$max_new"
 
+      - name: Refresh official fiscal-supervision topics
+        if: steps.plan.outputs.scope == 'fiscal' || steps.plan.outputs.scope == 'cases' || steps.plan.outputs.scope == 'all'
+        shell: bash
+        run: |
+          if [[ "${{ steps.plan.outputs.scope }}" == "all" ]]; then
+            pages=3
+            max_new=20
+          else
+            pages=1
+            max_new=6
+          fi
+          python deployment/refresh_fiscal_regulations.py \
+            --topics all \
+            --pages "$pages" \
+            --max-new-per-topic "$max_new"
+
       - name: Compare source fingerprints
         id: changes
         shell: bash
@@ -148,21 +165,32 @@ jobs:
       - name: Rebuild financial site before unified制度 build
         if: >-
           steps.changes.outputs.regulations_changed == 'true' ||
-          steps.changes.outputs.accounting_changed == 'true'
+          steps.changes.outputs.accounting_changed == 'true' ||
+          steps.changes.outputs.fiscal_changed == 'true'
         shell: bash
         run: python build_iweicha_ffs_site.py
 
       - name: Rebuild accounting site before unified制度 build
         if: >-
           steps.changes.outputs.regulations_changed == 'true' ||
-          steps.changes.outputs.accounting_changed == 'true'
+          steps.changes.outputs.accounting_changed == 'true' ||
+          steps.changes.outputs.fiscal_changed == 'true'
         shell: bash
         run: python build_maodocs_site.py
+
+      - name: Rebuild fiscal-supervision site before unified制度 build
+        if: >-
+          steps.changes.outputs.regulations_changed == 'true' ||
+          steps.changes.outputs.accounting_changed == 'true' ||
+          steps.changes.outputs.fiscal_changed == 'true'
+        shell: bash
+        run: python build_fiscal_site.py
 
       - name: Rebuild unified制度 source after制度 changes
         if: >-
           steps.changes.outputs.regulations_changed == 'true' ||
-          steps.changes.outputs.accounting_changed == 'true'
+          steps.changes.outputs.accounting_changed == 'true' ||
+          steps.changes.outputs.fiscal_changed == 'true'
         shell: bash
         run: python build_unified_offline_kb.py --skip-media --no-zip
 
@@ -280,6 +308,7 @@ jobs:
             echo "- Cases changed: ${{ steps.changes.outputs.cases_changed || 'not evaluated' }}"
             echo "- Financial制度 changed: ${{ steps.changes.outputs.regulations_changed || 'not evaluated' }}"
             echo "- Accounting制度 changed: ${{ steps.changes.outputs.accounting_changed || 'not evaluated' }}"
+            echo "- Fiscal制度 changed: ${{ steps.changes.outputs.fiscal_changed || 'not evaluated' }}"
             echo "- Dry run: ${{ steps.plan.outputs.dry_run }}"
             if [[ -n "${{ steps.version.outputs.value }}" ]]; then
               echo "- Candidate version: ${{ steps.version.outputs.value }}"

@@ -50,6 +50,15 @@ COLLECTIONS = [
         "navigation": "按会计、审计、证券、内控、评估目录浏览",
         "color": "gold",
     },
+    {
+        "id": "fiscal",
+        "name": "财政监管制度",
+        "root": ROOT / "fiscal_kb",
+        "site_root": ROOT / "fiscal_site",
+        "description": "预算、债务、财政资金、采购、国库、绩效、资产及金融企业财政监管制度",
+        "navigation": "按财政监管局工作专题、发布机构、年份和文号浏览",
+        "color": "blue",
+    },
 ]
 
 MAODOCS_SECTIONS = {
@@ -120,6 +129,8 @@ def record_category(collection_id: str, record: dict) -> str:
         return clean_text(record.get("agency") or "其他")
     if collection_id == "penalties":
         return clean_text(record.get("source") or record.get("agency") or "其他")
+    if collection_id == "fiscal":
+        return clean_text(record.get("topic") or record.get("category") or "财政综合")
     rel = PurePosixPath(str(record.get("markdown_path", "")).replace("\\", "/"))
     parts = rel.parts
     section = parts[1] if len(parts) > 1 and parts[0] == "markdown" else (parts[0] if parts else "")
@@ -131,6 +142,8 @@ def record_date(collection_id: str, record: dict) -> str:
         return clean_text(str(record.get("year") or ""))
     if collection_id == "penalties":
         return clean_text(str(record.get("publish_date") or ""))
+    if collection_id == "fiscal":
+        return clean_text(str(record.get("publish_date") or record.get("lastmod") or ""))[:10]
     return clean_text(str(record.get("lastmod") or ""))[:10]
 
 
@@ -155,6 +168,8 @@ def record_tags(collection_id: str, record: dict) -> list[str]:
                 record.get("penalty_types", ""),
             ]
         )
+    elif collection_id == "fiscal":
+        values.extend([record.get("topic", ""), record.get("source", ""), record.get("description", "")])
     else:
         values.append(record.get("description", ""))
     return [clean_text(str(value)) for value in values if clean_text(str(value or ""))]
@@ -445,11 +460,11 @@ def index_page(manifest: dict) -> str:
     <div class="hero-inner">
       <div class="eyebrow">FINANCIAL REGULATION · OFFLINE LIBRARY</div>
       <h1>金融监管统一知识库</h1>
-      <p>金融监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。</p>
+      <p>金融监管制度、财政监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。</p>
       <div class="hero-stats">
         <div><strong>{manifest['documents']:,}</strong><span>篇文档</span></div>
         <div><strong>{len(manifest['categories'])}</strong><span>个分类</span></div>
-        <div><strong>3</strong><span>套来源库</span></div>
+        <div><strong>4</strong><span>套来源库</span></div>
       </div>
     </div>
   </header>
@@ -545,6 +560,7 @@ button, input, select { font: inherit; }
 .collection-card::before { background: var(--teal); border-radius: 99px; content: ""; height: 4px; left: 22px; position: absolute; top: 0; width: 54px; }
 .collection-card.red::before { background: var(--red); }
 .collection-card.gold::before { background: var(--gold); }
+.collection-card.blue::before { background: #2f668c; }
 .collection-card:hover { transform: translateY(-2px); }
 .collection-card[aria-pressed="true"] { border-color: var(--teal); box-shadow: 0 12px 34px rgba(14,98,92,.16); }
 .card-label { display: block; font-size: 16px; font-weight: 700; margin-bottom: 10px; }
@@ -558,6 +574,7 @@ button, input, select { font: inherit; }
 .collection-actions a { background: var(--teal); border: 1px solid var(--teal); color: white; font-weight: 700; gap: 5px; }
 .collection-card.red .collection-actions a { background: var(--red); border-color: var(--red); }
 .collection-card.gold .collection-actions a { background: var(--gold); border-color: var(--gold); }
+.collection-card.blue .collection-actions a { background: #2f668c; border-color: #2f668c; }
 .search-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); margin-top: 18px; padding: 28px; }
 .search-heading { align-items: end; display: flex; justify-content: space-between; }
 .search-heading h2 { font-family: "STSong", "SimSun", serif; font-size: 25px; margin: 0 0 4px; }
@@ -813,7 +830,7 @@ def fts_query(value: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="检索金融监管统一知识库")
     parser.add_argument("query", help="关键词；多个词以空格分隔")
-    parser.add_argument("--collection", choices=["金融监管制度", "财政部和证监会处罚库", "会计制度"])
+    parser.add_argument("--collection", choices=["金融监管制度", "财政部和证监会处罚库", "财政监管制度", "会计制度"])
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--db", default=str(Path(__file__).with_name("data") / "knowledge_base.sqlite"))
     args = parser.parse_args()
@@ -1086,7 +1103,7 @@ def readme_text(manifest: dict) -> str:
 ## 文件说明
 
 - `打开知识库.html` / `index.html`：统一检索入口。
-- `systems/`：三套原系统的独立导览与分类页面。
+- `systems/`：四套原系统的独立导览与分类页面。
 - `docs/`：统一样式的离线正文网页。
 - `data/markdown/`：按资料库编号保存的 Markdown 原文。
 - `data/index.jsonl`：统一元数据索引。
@@ -1103,7 +1120,7 @@ python search_kb.py "资本 管理" --collection "金融监管制度" --limit 30
 
 ## 口径说明
 
-- 三套来源库均完整保留，精确重复正文不自动删除，避免丢失来源和分类信息。
+- 四套来源库均完整保留，精确重复正文不自动删除，避免丢失来源和分类信息。
 - 网页入口进行本机全文匹配；SQLite 库适合更精确、批量或二次开发检索。
 - 在线来源链接仅用于溯源；离线正文、索引和已缓存图片不依赖这些链接。
 """
@@ -1175,7 +1192,7 @@ def build(
     (output / "search_kb.py").write_text(search_script(), encoding="utf-8")
     (output / "README.md").write_text(readme_text(manifest), encoding="utf-8")
     (output / "使用说明.txt").write_text(
-        "金融监管统一知识库（离线包）\n\n双击“打开知识库.html”开始使用。\n首页可进入三套原系统导览，也可跨系统统一搜索。\n无需安装，无需联网。\n",
+        "金融监管统一知识库（离线包）\n\n双击“打开知识库.html”开始使用。\n首页可进入四套原系统导览，也可跨系统统一搜索。\n无需安装，无需联网。\n",
         encoding="utf-8-sig",
     )
     write_data_files(output, documents, manifest)
@@ -1198,7 +1215,7 @@ def build(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="合并三套资料库，生成金融监管统一知识库离线包")
+    parser = argparse.ArgumentParser(description="合并四套资料库，生成金融监管统一知识库离线包")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--zip", dest="zip_path", type=Path, default=DEFAULT_ZIP)
     parser.add_argument("--skip-media", action="store_true", help="跳过外部图片缓存（仅用于快速调试）")

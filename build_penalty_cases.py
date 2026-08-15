@@ -21,6 +21,11 @@ ROOT = Path("penalty_cases_kb")
 SITE = Path("penalty_cases_site")
 MOF_LIST_URL = "https://www.mof.gov.cn/gp/xxgkml/index_8254.htm"
 MOF_BASE_URL = "https://www.mof.gov.cn/gp/xxgkml/"
+MOF_HIDDEN_DEBT_NOTICES = (
+    "https://jdjc.mof.gov.cn/jianchagonggao/202311/t20231106_3914898.htm",
+    "https://jdjc.mof.gov.cn/jianchagonggao/202504/t20250418_3962254.htm",
+    "https://jdjc.mof.gov.cn/jianchagonggao/202508/t20250801_3969211.htm",
+)
 CSRC_CHANNEL_ID = "28de6b87eda140cb93de4dd10d11867d"
 CSRC_LIST_URL = (
     "https://www.csrc.gov.cn/searchList/"
@@ -361,6 +366,81 @@ def parse_mof_case(session: requests.Session, record: dict) -> dict:
         "body": body_text,
         "raw_html": source,
     }
+
+
+def request_mof_notice(session: requests.Session, url: str) -> str:
+    last_error = None
+    for attempt in range(1, 9):
+        target = f"{url}?finreg_retry={time.time_ns()}_{attempt}"
+        try:
+            response = session.get(target, timeout=45)
+            response.raise_for_status()
+            if len(response.content) < 5000:
+                raise RuntimeError("unexpectedly short MOF notice response")
+            response.encoding = response.apparent_encoding or "utf-8"
+            if "502 Bad Gateway" in response.text:
+                raise RuntimeError("MOF gateway returned an error page")
+            return response.text
+        except Exception as error:
+            last_error = error
+            if attempt < 8:
+                time.sleep(min(attempt, 3))
+    raise RuntimeError(f"failed to fetch hidden-debt notice {url}: {last_error}") from last_error
+
+
+def parse_mof_hidden_debt_cases(session: requests.Session) -> list[dict]:
+    """Split each official hidden-debt roundup into searchable individual cases."""
+    records = []
+    ordinal_pattern = re.compile(r"^([一二三四五六七八九十]+)、(.+)")
+    for notice_url in MOF_HIDDEN_DEBT_NOTICES:
+        source = request_mof_notice(session, notice_url)
+        soup = BeautifulSoup(source, "lxml")
+        content = (
+            soup.select_one(".TRS_Editor")
+            or soup.select_one(".article_con")
+            or soup.select_one("#zoom")
+            or soup.find(class_=re.compile(r"article.*content|content.*article", re.I))
+        )
+        if content is None:
+            raise RuntimeError(f"hidden-debt notice body not found: {notice_url}")
+        title_node = soup.find(["h1", "h2"])
+        notice_title = clean_text(title_node.get_text(" ", strip=True)) if title_node else "财政部地方政府隐性债务问责典型案例通报"
+        page_text = clean_text(soup.get_text("\n", strip=True))
+        date_match = re.search(r"(20\d{2})年(\d{1,2})月(\d{1,2})日\s+来源[：:]?\s*监督评价局", page_text)
+        if date_match:
+            publish_date = f"{date_match.group(1)}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
+        else:
+            url_date = re.search(r"/t(20\d{2})(\d{2})(\d{2})_", notice_url)
+            publish_date = "-".join(url_date.groups()) if url_date else ""
+        found = 0
+        for block in content.find_all("p"):
+            text = clean_text(block.get_text(" ", strip=True))
+            match = ordinal_pattern.match(text)
+            if not match or len(text) < 80:
+                continue
+            ordinal, remainder = match.groups()
+            headline = remainder.split("。", 1)[0].strip(" 。")
+            found += 1
+            records.append(
+                {
+                    "source": "财政部",
+                    "agency": "财政部",
+                    "department": "监督评价局",
+                    "category": "隐性债务问责通报",
+                    "case_topic": "隐性债务",
+                    "title": f"隐性债务典型案例：{headline}",
+                    "file_no": "",
+                    "publish_date": publish_date,
+                    "url": f"{notice_url}#hidden-debt-{ordinal}",
+                    "body": text,
+                    "raw_html": source,
+                    "notice_title": notice_title,
+                }
+            )
+        if found == 0:
+            raise RuntimeError(f"no individual hidden-debt cases parsed: {notice_url}")
+        print(f"MOF hidden debt: parsed {found} cases from {publish_date}")
+    return records
 
 
 def meta_value(item: dict, key: str) -> str:
@@ -771,6 +851,8 @@ def extract_file_no(text: str) -> str:
 
 
 def detect_violation_type(text: str, source: str = "") -> str:
+    if re.search(r"隐性债务|违法违规举债|新增政府债务|化债不实|少报漏报债务", text):
+        return "地方政府隐性债务"
     if source == CCDI_SOURCE:
         ccdi_patterns = [
             ("违反政治纪律", "违反政治纪律"),
@@ -1157,6 +1239,8 @@ def markdown_for_case(record: dict) -> str:
         "source_url": record["url"],
         "sha256": record["sha256"],
     }
+    if record.get("case_topic"):
+        frontmatter["case_topic"] = record["case_topic"]
     lines = ["---"]
     for key, value in frontmatter.items():
         value = str(value).replace('"', '\\"')
@@ -1178,6 +1262,8 @@ def markdown_for_case(record: dict) -> str:
         lines.append(f"- 通告阶段：{record['case_stage']}")
     if record.get("cadre_level"):
         lines.append(f"- 干部层级：{record['cadre_level']}")
+    if record.get("case_topic"):
+        lines.append(f"- 案例专题：{record['case_topic']}")
     lines.append(f"- 案由分类：{record.get('violation_type', '')}")
     if record.get("penalty_types"):
         lines.append(f"- 处罚/处理类型：{record['penalty_types']}")
@@ -1205,8 +1291,8 @@ def write_kb(records: list[dict], output_dir: Path) -> None:
         md_path.parent.mkdir(parents=True, exist_ok=True)
         raw_path.parent.mkdir(parents=True, exist_ok=True)
         markdown = markdown_for_case(record)
-        md_path.write_text(markdown, encoding="utf-8")
-        raw_path.write_text(record.get("raw_html", ""), encoding="utf-8")
+        md_path.write_text(markdown, encoding="utf-8", newline="\n")
+        raw_path.write_text(record.get("raw_html", ""), encoding="utf-8", newline="\n")
         record["markdown_path"] = md_path.relative_to(output_dir).as_posix()
         record["raw_html_path"] = raw_path.relative_to(output_dir).as_posix()
     write_index(output_dir, records)
@@ -1225,6 +1311,7 @@ def write_index(output_dir: Path, records: list[dict]) -> None:
         "documents": len(records),
         "by_source": dict(Counter(record["source"] for record in records)),
         "by_violation_type": dict(Counter(record.get("violation_type", "其他") for record in records)),
+        "by_case_topic": dict(Counter(record.get("case_topic", "其他") for record in records)),
         "sources": {
             "财政部": MOF_LIST_URL,
             "证监会": f"https://www.csrc.gov.cn/csrc/c101928/zfxxgk_zdgk.shtml",
@@ -1418,10 +1505,10 @@ def write_site(records: list[dict], kb_dir: Path, site_dir: Path) -> None:
     for record in records:
         path = site_dir / html_path(record)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(case_page(record), encoding="utf-8")
+        path.write_text(case_page(record), encoding="utf-8", newline="\n")
         record["html_path"] = html_path(record)
-    (site_dir / "index.html").write_text(index_page(records, kb_dir), encoding="utf-8")
-    (site_dir / "assets" / "site.css").write_text(site_css(), encoding="utf-8")
+    (site_dir / "index.html").write_text(index_page(records, kb_dir), encoding="utf-8", newline="\n")
+    (site_dir / "assets" / "site.css").write_text(site_css(), encoding="utf-8", newline="\n")
     (site_dir / "site_manifest.json").write_text(
         json.dumps({"documents": len(records), "generated_at": datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -1904,7 +1991,14 @@ def main() -> None:
 
     all_cases = []
     seen = set()
-    for case in mof_cases + csrc_cases + audit_cases + ccdi_cases:
+    print("Fetching MOF hidden-debt notices...")
+    try:
+        hidden_debt_cases = parse_mof_hidden_debt_cases(session)
+    except Exception as exc:
+        hidden_debt_cases = []
+        print(f"MOF hidden-debt fetch failed: {exc}")
+
+    for case in mof_cases + hidden_debt_cases + csrc_cases + audit_cases + ccdi_cases:
         key = case.get("url") or case.get("sha256")
         if key in seen:
             continue

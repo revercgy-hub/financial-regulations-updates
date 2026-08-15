@@ -10,5 +10,6 @@
 !/build_unified_offline_kb.py
 !/build_iweicha_ffs_site.py
 !/build_maodocs_site.py
+!/build_fiscal_site.py
 !/crawl_iweicha_ffs.py
 !/crawl_maodocs.py

@@ -33,7 +33,9 @@ def stable_case_id(record: dict) -> str:
 
 def refresh_mof(session, old_records: list[dict]) -> list[dict]:
     discovered = cases.parse_mof_list(session)
-    old_by_url = {item.get("url"): item for item in old_records if item.get("url")}
+    old_hidden = [item for item in old_records if item.get("case_topic") == "隐性债务"]
+    old_regular = [item for item in old_records if item.get("case_topic") != "隐性债务"]
+    old_by_url = {item.get("url"): item for item in old_regular if item.get("url")}
     refreshed = []
     reused = 0
     fetched = 0
@@ -60,8 +62,16 @@ def refresh_mof(session, old_records: list[dict]) -> list[dict]:
         if index % 25 == 0:
             print(f"MOF {index}/{len(discovered)}")
         time.sleep(0.08)
+    try:
+        hidden = cases.parse_mof_hidden_debt_cases(session)
+        print(f"MOF hidden-debt refresh: fetched {len(hidden)} individual cases")
+    except Exception as error:
+        if not old_hidden:
+            raise
+        hidden = old_hidden
+        print(f"MOF hidden-debt refresh: retained {len(hidden)} cached cases ({error})")
     print(f"MOF incremental refresh: reused {reused}, fetched {fetched}")
-    return refreshed
+    return refreshed + hidden
 
 
 def refresh_csrc(session, old_records: list[dict], recent_limit: int) -> list[dict]:

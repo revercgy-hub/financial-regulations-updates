@@ -24,6 +24,7 @@ APP_VERSION = "1.8.0"
 MINIMUM_DOCUMENTS = {
     "regulations": 2021,
     "accounting": 1291,
+    "fiscal": 8,
 }
 EXPECTED_CASE_SOURCES = {"财政部", "证监会", "审计署", "中央纪委国家监委"}
 SHARD_COUNT = 16
@@ -107,22 +108,22 @@ def build_homepage(
     if case_card_count != 1:
         raise RuntimeError(f"Expected one case card placeholder, found {case_card_count}")
     html = re.sub(
-        r'\s*<a href="systems/(?:regulations|accounting)/index\.html">.*?</a>',
+        r'\s*<a href="systems/(?:regulations|accounting|fiscal)/index\.html">.*?</a>',
         "",
         html,
     )
     replacements = {
-        "FINANCIAL REGULATION · OFFLINE LIBRARY": "FINANCIAL, ACCOUNTING & CASES · ONLINE SYNC",
-        "金融监管统一知识库": "金融、会计与案例知识库",
-        "金融监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。":
-            "金融监管制度、会计制度与财政、证监、审计、纪检监察案例，联网同步更新。",
+        "FINANCIAL REGULATION · OFFLINE LIBRARY": "FINANCIAL, FISCAL, ACCOUNTING & CASES · ONLINE SYNC",
+        "金融监管统一知识库": "金融、财政、会计与案例知识库",
+        "金融监管制度、财政监管制度、财政部和证监会处罚案例、会计制度，一处检索，完全离线。":
+            "金融监管制度、财政监管制度、会计制度与财政、证监、审计、纪检监察案例，联网同步更新。",
         "在统一库中筛选": "在制度库中筛选",
-        "统一全文检索": "金融与会计制度检索",
+        "统一全文检索": "金融、财政与会计制度检索",
         "支持标题、正文、文号、机构、当事人、案由和处罚类型":
             "支持标题、正文、文号、机构、分类、状态和年份",
         "例如：内幕交易、资本管理、会计准则第14号、银监发":
-            "例如：资本管理、会计准则第14号、内部控制、银监发",
-        "正在载入离线索引…": "正在载入金融与会计制度索引…",
+            "例如：地方政府债务、政府采购、会计准则第14号、银监发",
+        "正在载入离线索引…": "正在载入金融、财政与会计制度索引…",
         "<div class=\"offline-badge\"><span></span>离线可用</div>":
             "<div class=\"offline-badge\"><span></span>已联网同步</div>",
         '<script src="assets/search-index.js"></script>':
@@ -144,8 +145,8 @@ def build_homepage(
             "<strong>4</strong><span>个案例来源</span>",
         ),
         (
-            r"<strong>3</strong><span>套来源库</span>",
-            "<strong>3</strong><span>套在线知识库</span>",
+            r"<strong>4</strong><span>套来源库</span>",
+            "<strong>4</strong><span>套在线知识库</span>",
         ),
     )
     for pattern, replacement in statistic_replacements:
@@ -156,7 +157,7 @@ def build_homepage(
         r'<section class="usage-note">.*?</section>',
         """<section class="usage-note">
       <strong>联网同步版</strong>
-      <p>本地内容由 APP 从 GitHub 安全下载并校验；金融监管制度、会计制度和案例库随同一版本自动更新。</p>
+      <p>本地内容由 APP 从 GitHub 安全下载并校验；金融监管、财政监管、会计制度和案例库随同一版本自动更新。</p>
       <p><a href="cases/index.html">进入财政、证监会、审计、纪检监察案例库</a></p>
       <span>知识库生成于 %s</span>
     </section>""" % generated_at,
@@ -201,10 +202,9 @@ def build_index(package: Path, records: list[dict[str, object]]) -> None:
     shards: list[list[list[object]]] = [[] for _ in range(SHARD_COUNT)]
     weights = [0] * SHARD_COUNT
     rows = [(index, str(item.get("search", ""))) for index, item in enumerate(records)]
-    for index, search_text in sorted(
-        rows, key=lambda row: len(row[1].encode("utf-8")), reverse=True
-    ):
-        shard_index = min(range(SHARD_COUNT), key=weights.__getitem__)
+    for index, search_text in rows:
+        identity = f"{records[index].get('collection_id', '')}|{records[index].get('page_path', '')}"
+        shard_index = int(hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8], 16) % SHARD_COUNT
         shards[shard_index].append([index, search_text])
         weights[shard_index] += len(search_text.encode("utf-8"))
 
@@ -313,6 +313,7 @@ def main() -> None:
     build_index(package, records)
     regulation_documents = collection_counts["regulations"]
     accounting_documents = collection_counts["accounting"]
+    fiscal_documents = collection_counts["fiscal"]
     package_manifest = {
         "schema": 1,
         "scope": SCOPE,
@@ -322,6 +323,7 @@ def main() -> None:
         "documents": len(records),
         "regulation_documents": regulation_documents,
         "accounting_documents": accounting_documents,
+        "fiscal_documents": fiscal_documents,
         "case_documents": case_documents,
         "case_by_source": case_by_source,
     }
@@ -354,7 +356,7 @@ def main() -> None:
     )
     print(
         f"Built {archive.name}: {archive.stat().st_size / 1024 / 1024:.1f} MiB, "
-        f"{regulation_documents:,} regulations + {accounting_documents:,} accounting + "
+        f"{regulation_documents:,} regulations + {fiscal_documents:,} fiscal + {accounting_documents:,} accounting + "
         f"{case_documents:,} cases, sha256={digest}"
     )
     print(f"Manifest: {latest_path}")

@@ -50,6 +50,7 @@ public final class MainActivity extends Activity {
     private static final int LIBRARY_REGULATIONS = 0;
     private static final int LIBRARY_ACCOUNTING = 1;
     private static final int LIBRARY_CASES = 2;
+    private static final int LIBRARY_FISCAL = 3;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private WebView webView;
     private ProgressBar progress;
@@ -110,7 +111,7 @@ public final class MainActivity extends Activity {
         bar.addView(home);
 
         title = new TextView(this);
-        title.setText("金融会计与案例库");
+        title.setText("金融财政会计与案例库");
         title.setTextColor(Color.WHITE);
         title.setTextSize(18);
         title.setMaxLines(1);
@@ -276,6 +277,7 @@ public final class MainActivity extends Activity {
         int currentLibrary = currentLibrary();
         if (currentLibrary != LIBRARY_REGULATIONS) actions.add("打开金融监管制度库");
         if (currentLibrary != LIBRARY_ACCOUNTING) actions.add("打开会计制度库");
+        if (currentLibrary != LIBRARY_FISCAL) actions.add("打开财政监管制度库");
         if (currentLibrary != LIBRARY_CASES) actions.add("打开案例库");
         actions.add(BuildConfig.OFFLINE_BUILD ? "检查内置知识库版本" : "立即检查知识库更新");
         if (updater.hasBackup()) actions.add("恢复上一版知识库");
@@ -290,6 +292,7 @@ public final class MainActivity extends Activity {
             else if ("返回当前检索首页".equals(selected)) returnToSearchHome();
             else if ("打开金融监管制度库".equals(selected)) openLibraryHome(LIBRARY_REGULATIONS);
             else if ("打开会计制度库".equals(selected)) openLibraryHome(LIBRARY_ACCOUNTING);
+            else if ("打开财政监管制度库".equals(selected)) openLibraryHome(LIBRARY_FISCAL);
             else if ("打开案例库".equals(selected)) openLibraryHome(LIBRARY_CASES);
             else if ("立即检查知识库更新".equals(selected)
                     || "检查内置知识库版本".equals(selected)) checkForUpdates(true);
@@ -523,6 +526,7 @@ public final class MainActivity extends Activity {
                     loadSearchHome(true);
                     Toast.makeText(MainActivity.this,
                             "知识库已启用 " + version + "（金融制度 " + updater.getRegulationDocuments() +
+                                    " 篇，财政制度 " + updater.getFiscalDocuments() +
                                     " 篇，会计制度 " + updater.getAccountingDocuments() +
                                     " 篇，案例 " + updater.getCaseDocuments() + " 条）",
                             Toast.LENGTH_LONG).show();
@@ -534,6 +538,7 @@ public final class MainActivity extends Activity {
                     dismissUpdateDialog();
                     if (wasManual) Toast.makeText(MainActivity.this,
                             "已是最新知识库版本 " + version + "（金融制度 " + updater.getRegulationDocuments() +
+                                    " 篇，财政制度 " + updater.getFiscalDocuments() +
                                     " 篇，会计制度 " + updater.getAccountingDocuments() +
                                     " 篇，案例 " + updater.getCaseDocuments() + " 条）",
                             Toast.LENGTH_LONG).show();
@@ -610,7 +615,7 @@ public final class MainActivity extends Activity {
             progressParams.topMargin = dp(18);
             layout.addView(updateProgress, progressParams);
             updateDialog = new AlertDialog.Builder(this)
-                    .setTitle("联网同步金融会计与案例库")
+                    .setTitle("联网同步金融财政会计与案例库")
                     .setView(layout)
                     .setCancelable(false)
                     .create();
@@ -637,7 +642,7 @@ public final class MainActivity extends Activity {
         String html = "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">" +
                 "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
                 "<body style=\"font-family:sans-serif;background:#f3f6f5;color:#173a35;padding:48px 24px\">" +
-                "<h2>正在准备金融会计与案例库</h2><p>" + message + "</p>" +
+                "<h2>正在准备金融财政会计与案例库</h2><p>" + message + "</p>" +
                 "</body></html>";
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
     }
@@ -650,11 +655,12 @@ public final class MainActivity extends Activity {
         String edition = BuildConfig.OFFLINE_BUILD ? "完整离线版" : "联网同步版";
         String updateDescription = BuildConfig.OFFLINE_BUILD
                 ? "知识库完整内置于 APK，查询和阅读无需联网。知识库版本与 APK 文件名对应；如需新版，请安装服务器发布的新离线 APK。"
-                : "启动时检查更新，并由 Android 在联网时每天后台检查一次。金融制度、会计制度和案例库始终作为同一版本更新。下载包会校验文件大小和 SHA-256，安装失败不会覆盖现有数据，并保留上一版本用于回滚。\n\n更新源：GitHub · " + RegulationUpdater.MANIFEST_URL;
-        new AlertDialog.Builder(this).setTitle("金融会计与案例库 · " + edition)
+                : "启动时检查更新，并由 Android 在联网时每天后台检查一次。金融制度、财政制度、会计制度和案例库始终作为同一版本更新。下载包会校验文件大小和 SHA-256，安装失败不会覆盖现有数据，并保留上一版本用于回滚。\n\n更新源：GitHub · " + RegulationUpdater.MANIFEST_URL;
+        new AlertDialog.Builder(this).setTitle("金融财政会计与案例库 · " + edition)
                 .setMessage("APP 版本：" + BuildConfig.VERSION_NAME + "\n" +
                         "制度版本：" + updater.getVersion() + "\n" +
                         "金融监管制度：" + updater.getRegulationDocuments() + " 篇\n" +
+                        "财政监管制度：" + updater.getFiscalDocuments() + " 篇\n" +
                         "会计制度：" + updater.getAccountingDocuments() + " 篇\n\n" +
                         "案例数量：" + updater.getCaseDocuments() + " 条\n" +
                         "案例来源：财政部、证监会、审计署、中央纪委国家监委\n\n" +
@@ -700,9 +706,22 @@ public final class MainActivity extends Activity {
         return path.startsWith(root + "docs" + File.separator + "accounting" + File.separator);
     }
 
+    private boolean isFiscalView() {
+        String url = webView == null ? null : webView.getUrl();
+        if (url == null) return false;
+        Uri uri = Uri.parse(url);
+        if (!"file".equalsIgnoreCase(uri.getScheme())) return false;
+        if ("fiscal".equals(uri.getQueryParameter("collection"))) return true;
+        String path = Uri.decode(uri.getPath());
+        if (path == null) return false;
+        String root = updater.getCurrentRoot().getAbsolutePath() + File.separator;
+        return path.startsWith(root + "docs" + File.separator + "fiscal" + File.separator);
+    }
+
     private int currentLibrary() {
         if (isCaseView()) return LIBRARY_CASES;
         if (isAccountingView()) return LIBRARY_ACCOUNTING;
+        if (isFiscalView()) return LIBRARY_FISCAL;
         return LIBRARY_REGULATIONS;
     }
 
@@ -717,6 +736,7 @@ public final class MainActivity extends Activity {
         String url = libraryHomeUrl(library) + "?" + marker + "=" + System.currentTimeMillis();
         if (library == LIBRARY_REGULATIONS) return url + "&collection=regulations";
         if (library == LIBRARY_ACCOUNTING) return url + "&collection=accounting";
+        if (library == LIBRARY_FISCAL) return url + "&collection=fiscal";
         return url;
     }
 
@@ -732,6 +752,11 @@ public final class MainActivity extends Activity {
         }
         if (library == LIBRARY_ACCOUNTING && updater.getAccountingDocuments() <= 0) {
             Toast.makeText(this, "当前版本尚未包含会计制度，请立即检查更新", Toast.LENGTH_LONG).show();
+            checkForUpdates(true);
+            return;
+        }
+        if (library == LIBRARY_FISCAL && updater.getFiscalDocuments() <= 0) {
+            Toast.makeText(this, "当前版本尚未包含财政监管制度，请立即检查更新", Toast.LENGTH_LONG).show();
             checkForUpdates(true);
             return;
         }
@@ -759,7 +784,8 @@ public final class MainActivity extends Activity {
             return;
         }
         String collection = currentLibrary() == LIBRARY_ACCOUNTING
-                ? "accounting" : currentLibrary() == LIBRARY_REGULATIONS ? "regulations" : "";
+                ? "accounting" : currentLibrary() == LIBRARY_FISCAL
+                ? "fiscal" : currentLibrary() == LIBRARY_REGULATIONS ? "regulations" : "";
         String script = "(function(){if(typeof window.KB_RESET_SEARCH==='function'){" +
                 "window.KB_RESET_SEARCH('" + collection + "');return true;}var c=document.getElementById('clearFilter');" +
                 "if(c){c.click();return true;}return false;})()";
