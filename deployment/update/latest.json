@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "scope": "regulations",
-  "version": "20260913.1",
-  "version_code": 2026091301,
-  "generated_at": "2026-09-12T22:40:47+00:00",
-  "documents": 3502,
+  "version": "20260914.1",
+  "version_code": 2026091401,
+  "generated_at": "2026-09-13T22:39:13+00:00",
+  "documents": 3507,
   "regulation_documents": 2039,
   "accounting_documents": 1294,
-  "fiscal_documents": 169,
+  "fiscal_documents": 174,
   "case_documents": 2972,
   "case_by_source": {
     "财政部": 126,
@@ -16,24 +16,24 @@
     "审计署": 608
   },
   "min_app_version_code": 8,
-  "package_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260913.1/knowledge-package-20260913.1.zip",
-  "package_size": 80809475,
-  "sha256": "76b07b8d132239c052c92d92fa40a1ebd473c7ddd097faa6eab602d78496db49",
+  "package_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260914.1/knowledge-package-20260914.1.zip",
+  "package_size": 80858495,
+  "sha256": "61d1fa6302d47160385e24e00d11480995d8f02e8eaf8b15fcf6aaddbb07c086",
   "app_version": "1.8.0",
-  "app_download_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260913.1/FinReg-KnowledgeBase-Online-v1.8.0.apk",
+  "app_download_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260914.1/FinReg-KnowledgeBase-Online-v1.8.0.apk",
   "delta": {
     "schema": 1,
-    "base_version": "20260912.1",
-    "base_version_code": 2026091201,
-    "url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260913.1/knowledge-delta-20260912.1-to-20260913.1.zip",
-    "size": 47261162,
-    "sha256": "53077c2008ac472b40e0d14a130be064ba06bf3394643763081e3f8cb63fc0d2",
-    "changed_files": 4806,
-    "deleted_files": 56
+    "base_version": "20260913.1",
+    "base_version_code": 2026091301,
+    "url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260914.1/knowledge-delta-20260913.1-to-20260914.1.zip",
+    "size": 3806339,
+    "sha256": "ae162eb735c9d501b8def8f033ad4ccae126965fa5be7c548820d0829f194a47",
+    "changed_files": 18,
+    "deleted_files": 0
   },
   "offline_app_version": "1.8.0-offline",
-  "offline_knowledge_version": "20260913.1",
-  "offline_app_download_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260913.1/FinReg-KnowledgeBase-Offline-KB20260913.1-v1.8.0.apk",
-  "offline_app_size": 80862720,
-  "offline_app_sha256": "1e81760bc582bb6a4fbdd4ea5402710eacc64fcba5a23f5e81788317c8e18fcf"
+  "offline_knowledge_version": "20260914.1",
+  "offline_app_download_url": "https://github.com/revercgy-hub/financial-regulations-updates/releases/download/knowledge-20260914.1/FinReg-KnowledgeBase-Offline-KB20260914.1-v1.8.0.apk",
+  "offline_app_size": 80911740,
+  "offline_app_sha256": "4b7c45f8bbcd37c4bf086902fe404af9434bd5dbf88149cfcac4bbc9bcec9b28"
 }
