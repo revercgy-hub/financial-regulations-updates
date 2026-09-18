@@ -21,10 +21,15 @@ ROOT = Path("penalty_cases_kb")
 SITE = Path("penalty_cases_site")
 MOF_LIST_URL = "https://www.mof.gov.cn/gp/xxgkml/index_8254.htm"
 MOF_BASE_URL = "https://www.mof.gov.cn/gp/xxgkml/"
+# 财政部「监督评价局 → 检查公告」栏目的地方政府隐性债务问责典型案例通报。
+# 该栏目没有稳定的自动发现入口，新批次需在此登记 URL；每篇通报由
+# parse_mof_hidden_debt_cases 按「一、二、三、…」序号拆成单条案例入库。
 MOF_HIDDEN_DEBT_NOTICES = (
-    "https://jdjc.mof.gov.cn/jianchagonggao/202311/t20231106_3914898.htm",
-    "https://jdjc.mof.gov.cn/jianchagonggao/202504/t20250418_3962254.htm",
-    "https://jdjc.mof.gov.cn/jianchagonggao/202508/t20250801_3969211.htm",
+    "https://jdjc.mof.gov.cn/jianchagonggao/202311/t20231106_3914898.htm",  # 2023-11-06 八起
+    "https://jdjc.mof.gov.cn/jianchagonggao/202409/t20240919_3944019.htm",  # 2024-09-19 八起
+    "https://jdjc.mof.gov.cn/jianchagonggao/202504/t20250418_3962254.htm",  # 2025-04-18 六起
+    "https://jdjc.mof.gov.cn/jianchagonggao/202508/t20250801_3969211.htm",  # 2025-08-01 六起
+    "https://jdjc.mof.gov.cn/jianchagonggao/202609/t20260911_3997260.htm",  # 2026-09-11 六起
 )
 CSRC_CHANNEL_ID = "28de6b87eda140cb93de4dd10d11867d"
 CSRC_LIST_URL = (
